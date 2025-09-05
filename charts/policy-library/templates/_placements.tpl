@@ -7,7 +7,7 @@ Function to pull in placement resources for Policies or PolicySets
 {{- $root := . -}}
 
 {{/* Access the component using the key */}}
-{{- $component := index .Values.components $componentName -}}
+{{- $component := index .Values.stack $componentName -}}
 
 {{/* Get whether we should use policySets or bind placementbinding directly to the policies */}}
 {{- $usePolicySetsPlacements := $component.usePolicySetsPlacements | default false }}
