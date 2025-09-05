@@ -1,6 +1,5 @@
 # PolicyStack ACM Policy Library Chart
 
-Test change 
 A Helm chart library for creating and managing OpenShift Advanced Cluster Management (ACM) policies. This chart enables you to define both configuration policies and operator policies and associate them with policy resources.
 This library is mainly intended to be used in a Gitops implementation (hence why the configuration is under a `components.<chartName>` dict)
 
