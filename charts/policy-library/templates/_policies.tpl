@@ -7,7 +7,7 @@ Main policy processing template with templateParameters support
 {{- $root := . -}}
 
 {{/* Access the component using the key */}}
-{{- $component := index .Values.components $componentName -}}
+{{- $component := index .Values.stack $componentName -}}
 {{- if $component -}}
 {{- if $component.enabled -}}
 

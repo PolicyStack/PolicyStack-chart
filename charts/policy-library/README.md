@@ -1,7 +1,7 @@
 # PolicyStack ACM Policy Library Chart
 
-A Helm chart library for creating and managing OpenShift Advanced Cluster Management (ACM) policies. This chart enables you to define both configuration policies and operator policies and associate them with policy resources.
-This library is mainly intended to be used in a Gitops implementation (hence why the configuration is under a `components.<chartName>` dict)
+A Helm chart library for creating and managing OpenShift Advanced Cluster Management (ACM) policies. This chart is meant to form that basis of the policy stack and enables you to define both configuration policies and operator policies and associate them with policy resources.
+This library is mainly intended to be used in the PolicyStack GitOps implementation (hence why the configuration is under a `stack.<chartName>` dict)
 
 ## Usage
 
@@ -25,7 +25,7 @@ All of these will need to be at the root of the values file.
 | `policyNamespace` | Namespace that these policies will be created in | Yes |
 
 ### Root Component Options
-All of these will need to be under the `components.<chartName>` dict. The chart name is taken from the chart of the parent but camelCased.  
+All of these will need to be under the `stack.<chartName>` dict. The chart name is taken from the chart of the parent but camelCased.  
 | Parameter | Description | Required |
 |-----------|-------------|----------|
 | `enabled` | Defines whether to template this component at all. This is for helm. | Yes |
@@ -36,7 +36,7 @@ All of these will need to be under the `components.<chartName>` dict. The chart 
 | `usePolicySetsPlacements` | By default, placementrules and placement bindings are generated for the policies directly. When this is set to true, the rules/bindings will be generated for the policySets instead of the policies themselves. | No |
 
 ### Custom Policy Options
-All of these will need to be under the `components.<chartName>` dict. The chart name is taken from the chart of the parent but camelCased.  
+All of these will need to be under the `stack.<chartName>` dict. The chart name is taken from the chart of the parent but camelCased.  
 | Parameter | Description | Required |
 |-----------|-------------|----------|
 | `policies[].name` | Name of the policy | Yes |
@@ -51,7 +51,7 @@ All of these will need to be under the `components.<chartName>` dict. The chart 
 | `policies[].disabled` | Whether the policy is disabled on the ACM side. | No |
 
 ### Configuration Policy Options
-All of these will need to be under the `components.<chartName>` dict. The chart name is taken from the chart of the parent but camelCased.  
+All of these will need to be under the `stack.<chartName>` dict. The chart name is taken from the chart of the parent but camelCased.  
 | Parameter | Description | Required |
 |-----------|-------------|----------|
 | `configPolicies[].name` | Name of the configuration policy | Yes |
@@ -77,7 +77,7 @@ All of these will need to be under the `components.<chartName>` dict. The chart 
 | `configPolicies[].templateParameters` | map of parameters that will be passed in each specific converter | No |
 
 ### Operator Policy Options
-All of these will need to be under the `components.<chartName>` dict. The chart name is taken from the chart of the parent but camelCased.  
+All of these will need to be under the `stack.<chartName>` dict. The chart name is taken from the chart of the parent but camelCased.  
 | Parameter | Description | Required |
 |-----------|-------------|----------|
 | `operatorPolicies[].name` | Name of the operator policy | Yes |
@@ -101,7 +101,7 @@ All of these will need to be under the `components.<chartName>` dict. The chart 
 | `operatorPolicies[].upgradeApproval` | Upgrade approval (Automatic or None) | No |
 
 ### Certificate Policy Options
-All of these will need to be under the `components.<chartName>` dict. The chart name is taken from the chart of the parent but camelCased.  
+All of these will need to be under the `stack.<chartName>` dict. The chart name is taken from the chart of the parent but camelCased.  
 | Parameter | Description | Required |
 |-----------|-------------|----------|
 | `certificatePolicies[].name` | Name of the certificate policy | Yes |
@@ -121,7 +121,7 @@ All of these will need to be under the `components.<chartName>` dict. The chart 
 | `certificatePolicies[].disableTemplating` | Disable templating inside the policy. This is mainly used for when a manifest has a templating agent inside the manifest | No |
 
 ### PolicySet Options
-All of these will need to be under the `components.<chartName>` dict. The chart name is taken from the chart of the parent but camelCased.  
+All of these will need to be under the `stack.<chartName>` dict. The chart name is taken from the chart of the parent but camelCased.  
 | Parameter | Description | Required |
 |-----------|-------------|----------|
 | `certificatePolicies[].name` | Name of the PolicySet | Yes |
@@ -143,7 +143,7 @@ selector:
       values:
         - dev
 
-components:
+stack:
   parentChartName:
     default:
       categories:
