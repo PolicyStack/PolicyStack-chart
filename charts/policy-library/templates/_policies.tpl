@@ -11,12 +11,28 @@ Main policy processing template with templateParameters support
 {{- if $component -}}
 {{- if $component.enabled -}}
 
+{{/* Ordering: chain policies / policy-templates via ACM dependencies */}}
+{{- $orderPolicies := $component.orderPolicies | default false -}}
+{{- $prevPolicy := "" -}}
+
 {{/* Process custom policies */}}
 {{- range $component.policies }}
 {{- if .enabled }}
 {{- $policyName := .name }}
 {{- $policyNamespace := $root.Values.policyNamespace }}
 {{- $policyValues := . }}
+
+{{/* orderManifests: component-level default, overridable per policy (including back to false) */}}
+{{- $orderManifests := $component.orderManifests | default false }}
+{{- if hasKey . "orderManifests" }}{{- $orderManifests = .orderManifests }}{{- end }}
+{{- $prevManifest := dict }}
+
+{{/* Policy-level dependencies: automatic ordering first, then any explicit entries */}}
+{{- $policyDeps := list }}
+{{- if and $orderPolicies $prevPolicy }}
+{{- $policyDeps = append $policyDeps (dict "name" $prevPolicy "kind" "Policy") }}
+{{- end }}
+{{- $policyDeps = concat $policyDeps (.dependencies | default list) }}
 
 {{/* Check if this policy has any configuration or operator policies */}}
 {{- $hasSubPolicies := include "hasPolicySubPolicies" (dict "policy" . "component" $component "root" $root) }}
@@ -51,6 +67,11 @@ spec:
   remediationAction: {{ .remediationAction }}
   {{- end }}
   disabled: {{ .disabled }}
+  {{- if $policyDeps }}
+  dependencies:
+    {{- include "policy-library.dependencyList" (dict "deps" $policyDeps "root" $root "policyRef" $policyName "defaultKind" "Policy") | nindent 4 }}
+  {{- end }}
+  {{- if $orderPolicies }}{{- $prevPolicy = $policyName }}{{- end }}
   policy-templates:
   {{- range $component.configPolicies -}}
   {{- if and .enabled (eq .policyRef $policyName) -}}
@@ -66,8 +87,10 @@ spec:
       {{- $templateContext = merge (dict "Parameters" .templateParameters) $root }}
     {{- end -}}
   {{- end -}}
+  {{- $depsYaml := include "policy-library.subPolicyDependencies" (dict "root" $root "component" $component "policyRef" $policyName "subPolicy" . "prev" (ternary $prevManifest dict $orderManifests)) -}}
+  {{- $prevManifest = dict "name" $configName "kind" "ConfigurationPolicy" -}}
     # Configuration policies - necessary to prevent line issues
-    - objectDefinition:
+    {{- include "policy-library.policyTemplateHeader" (dict "depsYaml" $depsYaml "ignorePending" .ignorePending) | nindent 4 }}
         apiVersion: policy.open-cluster-management.io/v1
         kind: ConfigurationPolicy
         metadata:
@@ -138,7 +161,19 @@ spec:
   {{- $severity := default $policyValues.severity .severity }}
   {{- $complianceType := default "musthave" .complianceType }}
   {{- $remediationAction := default $policyValues.remediationAction .remediationAction }}
-    - objectDefinition:
+  {{- /*
+  Operator policies render three objects. Under orderManifests they are chained explicitly rather
+  than by render position: ns -> OperatorPolicy -> status. Chaining in render position would make
+  the OperatorPolicy wait on the CSV status check that only its own installation can satisfy.
+  */ -}}
+  {{- $nsRef := dict "name" (printf "%s-ns" $configName) "kind" "ConfigurationPolicy" }}
+  {{- $opRef := dict "name" $configName "kind" "OperatorPolicy" }}
+  {{- $statusRef := dict "name" (printf "%s-status" $configName) "kind" "ConfigurationPolicy" }}
+  {{- $nsDeps := include "policy-library.subPolicyDependencies" (dict "root" $root "component" $component "policyRef" $policyName "subPolicy" dict "prev" (ternary $prevManifest dict $orderManifests)) }}
+  {{- $opDeps := include "policy-library.subPolicyDependencies" (dict "root" $root "component" $component "policyRef" $policyName "subPolicy" . "prev" (ternary $nsRef dict $orderManifests)) }}
+  {{- $statusDeps := include "policy-library.subPolicyDependencies" (dict "root" $root "component" $component "policyRef" $policyName "subPolicy" dict "prev" (ternary $opRef dict $orderManifests)) }}
+  {{- $prevManifest = $statusRef }}
+    {{- include "policy-library.policyTemplateHeader" (dict "depsYaml" $nsDeps) | nindent 4 }}
         apiVersion: policy.open-cluster-management.io/v1
         kind: ConfigurationPolicy
         metadata:
@@ -153,7 +188,7 @@ spec:
                 kind: Namespace
                 metadata:
                   name: {{ .namespace }}
-    - objectDefinition:
+    {{- include "policy-library.policyTemplateHeader" (dict "depsYaml" $statusDeps) | nindent 4 }}
         apiVersion: policy.open-cluster-management.io/v1
         kind: ConfigurationPolicy
         metadata:
@@ -172,7 +207,7 @@ spec:
                   displayName: {{ .displayName | default .subscription.name }}
                 status:
                   phase: Succeeded
-    - objectDefinition:
+    {{- include "policy-library.policyTemplateHeader" (dict "depsYaml" $opDeps "ignorePending" .ignorePending) | nindent 4 }}
         apiVersion: policy.open-cluster-management.io/v1beta1
         kind: OperatorPolicy
         metadata:
@@ -224,7 +259,9 @@ spec:
   {{- $configName := printf "%s-%s" $policyName .name }}
   {{- $severity := default "low" .severity }}
   {{- $remediationAction := default "inform" .remediationAction }}
-    - objectDefinition:
+  {{- $depsYaml := include "policy-library.subPolicyDependencies" (dict "root" $root "component" $component "policyRef" $policyName "subPolicy" . "prev" (ternary $prevManifest dict $orderManifests)) }}
+  {{- $prevManifest = dict "name" $configName "kind" "CertificatePolicy" }}
+    {{- include "policy-library.policyTemplateHeader" (dict "depsYaml" $depsYaml "ignorePending" .ignorePending) | nindent 4 }}
         apiVersion: policy.open-cluster-management.io/v1
         kind: CertificatePolicy
         metadata:
