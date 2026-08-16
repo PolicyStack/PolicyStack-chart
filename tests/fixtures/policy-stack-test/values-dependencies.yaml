@@ -1,0 +1,100 @@
+# Exercises every dependency / ordering key added in chart 1.2.0.
+policyNamespace: open-cluster-management
+
+selector:
+  matchExpressions:
+    environment:
+      key: environment
+      operator: In
+      values:
+        - dev
+
+stack:
+  policyStackTest:
+    enabled: true
+    orderPolicies: true
+    orderManifests: true
+
+    policies:
+      # First in the chain -> no automatic dependency.
+      - name: operators
+        enabled: true
+        disabled: false
+        remediationAction: enforce
+
+      # No sub-policies reference this, so no Policy is emitted and the chain must skip it.
+      - name: orphan
+        enabled: true
+        disabled: false
+
+      # Automatic dependency on "operators", plus explicit cross-release / raw entries.
+      - name: workloads
+        enabled: true
+        disabled: false
+        remediationAction: enforce
+        dependencies:
+          - name: cluster-bootstrap
+            release: platform-base
+          - name: hand-made-policy
+            raw: true
+            compliance: Compliant
+
+      # Per-policy override back to false: templates here are not chained.
+      - name: certs
+        enabled: true
+        disabled: false
+        orderManifests: false
+
+    operatorPolicies:
+      - name: oadp
+        enabled: true
+        policyRef: operators
+        displayName: "OADP Operator"
+        namespace: openshift-adp
+        complianceType: musthave
+        ignorePending: true
+        operatorGroup:
+          name: openshift-adp-group
+          targetNamespaces:
+            - openshift-adp
+        subscription:
+          channel: stable
+          name: redhat-oadp-operator
+          source: redhat-operators
+          sourceNamespace: openshift-marketplace
+        upgradeApproval: Automatic
+
+    configPolicies:
+      # waitForOperator resolves to the generated operators-oadp-status ConfigurationPolicy,
+      # even though the operator lives under a different parent policy.
+      - name: dpa
+        enabled: true
+        policyRef: workloads
+        remediationAction: enforce
+        waitForOperator: oadp
+        ignorePending: true
+        templateNames:
+          - name: cm
+        extraDependencies:
+          - name: oadp
+            kind: OperatorPolicy
+            policyRef: operators
+          - name: some-prereq-policy
+            kind: Policy
+        enableTemplateParameters: true
+        templateParameters:
+          name: dpa-cm
+          value1: dpa
+
+      # Second manifest under the same policy -> chained onto "workloads-dpa".
+      - name: followup
+        enabled: true
+        policyRef: workloads
+        templateNames:
+          - name: cm
+
+    certificatePolicies:
+      - name: expiry
+        enabled: true
+        policyRef: certs
+        minimumDuration: 300h

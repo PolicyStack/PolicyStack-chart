@@ -1,0 +1,8 @@
+{{- $params := .Parameters | default dict -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $params.name | default "test-cm" }}
+  namespace: default
+data:
+  value1: {{ $params.value1 | default "unset" | quote }}

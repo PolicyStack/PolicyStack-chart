@@ -1,0 +1,88 @@
+# Baseline values: uses NONE of the dependency/ordering keys.
+# Rendering this must stay byte-identical across the dependency feature work.
+policyNamespace: open-cluster-management
+
+selector:
+  matchExpressions:
+    environment:
+      key: environment
+      operator: In
+      values:
+        - dev
+
+stack:
+  policyStackTest:
+    enabled: true
+    default:
+      categories:
+        - CM Configuration Management
+      controls:
+        - CM-2 Baseline Configuration
+      standards:
+        - NIST SP 800-53
+
+    policies:
+      - name: base
+        enabled: true
+        description: "Baseline policy"
+        severity: medium
+        remediationAction: enforce
+        disabled: false
+
+      - name: certs
+        enabled: true
+        severity: low
+        disabled: false
+
+      # No sub-policies reference this one, so it is never emitted.
+      - name: orphan
+        enabled: true
+        disabled: false
+
+    configPolicies:
+      - name: test-cm
+        enabled: true
+        description: "Test ConfigMap"
+        policyRef: base
+        severity: medium
+        remediationAction: enforce
+        complianceType: musthave
+        templateNames:
+          - name: cm
+        enableTemplateParameters: true
+        templateParameters:
+          name: testcm
+          value1: hello
+
+    operatorPolicies:
+      - name: oadp
+        enabled: true
+        description: "Operator policy for OpenShift ADP"
+        displayName: "OADP Operator"
+        policyRef: base
+        complianceType: musthave
+        namespace: openshift-adp
+        operatorGroup:
+          name: openshift-adp-group
+          targetNamespaces:
+            - openshift-adp
+        subscription:
+          channel: stable
+          name: redhat-oadp-operator
+          source: redhat-operators
+          sourceNamespace: openshift-marketplace
+        upgradeApproval: Automatic
+
+    certificatePolicies:
+      - name: expiry
+        enabled: true
+        policyRef: certs
+        severity: low
+        minimumDuration: 300h
+
+    policySets:
+      - name: baseline
+        enabled: true
+        policies:
+          - base
+          - certs
