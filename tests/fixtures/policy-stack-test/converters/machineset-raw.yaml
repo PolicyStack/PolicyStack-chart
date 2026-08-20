@@ -1,0 +1,17 @@
+{{- /*
+Raw converter: emits one object per entry in a values MAP, so the instance count is set by the
+values cascade rather than fixed in a list. The Helm range resolves at render time; the escaped
+braces survive to the managed cluster for ACM to evaluate.
+*/ -}}
+{{- $params := .Parameters | default dict -}}
+{{- range $zone, $cfg := $params.zones }}
+- complianceType: musthave
+  objectDefinition:
+    apiVersion: machine.openshift.io/v1beta1
+    kind: MachineSet
+    metadata:
+      name: {{ "{{" }} (lookup "config.openshift.io/v1" "Infrastructure" "" "cluster").status.infrastructureName {{ "}}" }}-{{ $params.role }}-{{ $zone }}
+      namespace: openshift-machine-api
+    spec:
+      replicas: {{ $cfg.replicas }}
+{{- end }}

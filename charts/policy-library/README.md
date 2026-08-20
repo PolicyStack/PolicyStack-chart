@@ -36,6 +36,7 @@ All of these will need to be under the `stack.<chartName>` dict. The chart name 
 | `usePolicySetsPlacements` | By default, placementrules and placement bindings are generated for the policies directly. When this is set to true, the rules/bindings will be generated for the policySets instead of the policies themselves. | No |
 | `orderPolicies` | When true, each policy in `policies[]` gets an ACM dependency on the previous one, so they are applied in declaration order. See [Policy Dependencies](#policy-dependencies). | No |
 | `orderManifests` | When true, the policy-templates inside each policy get `extraDependencies` chaining them in render order. Overridable per policy. | No |
+| `toggles` | Map keyed by an entry's `name` that overrides that entry's `enabled`. See [Toggles](#toggles). | No |
 
 ### Custom Policy Options
 All of these will need to be under the `stack.<chartName>` dict. The chart name is taken from the chart of the parent but camelCased.  
@@ -82,6 +83,7 @@ All of these will need to be under the `stack.<chartName>` dict. The chart name 
 | `configPolicies[].extraDependencies` | List of [dependency entries](#policy-dependencies) gating just this ConfigurationPolicy | No |
 | `configPolicies[].waitForOperator` | Name (or list of names) from `operatorPolicies[]`. Waits for the generated CSV status check before applying this configuration. | No |
 | `configPolicies[].ignorePending` | Treat this template as compliant while it is waiting on its dependencies | No |
+| `configPolicies[].rawTemplate` | Emit the converter under `object-templates-raw` instead of `object-templates`. Requires exactly one `templateNames` entry. See [Raw object templates](#raw-object-templates). | No |
 
 ### Operator Policy Options
 All of these will need to be under the `stack.<chartName>` dict. The chart name is taken from the chart of the parent but camelCased.  
@@ -97,6 +99,7 @@ All of these will need to be under the `stack.<chartName>` dict. The chart name 
 | `operatorPolicies[].namespace` | Namespace for operator installation | Yes |
 | `operatorPolicies[].displayName` | Display name for status check | No |
 | `operatorPolicies[].versions` | List of approved versions for policies to install. Recommend to set upgradeApproval to `Automatic` | No |
+| `operatorPolicies[].operatorGroup` | Whole block is optional. Omit it to get an OperatorGroup named after the subscription, installed cluster-scoped. Set `name` to reuse a namespace's existing OperatorGroup (`global-operators` in `openshift-operators`) - a second OperatorGroup in one namespace breaks OLM. | No |
 | `operatorPolicies[].operatorGroup.name` | Name of operator group | No |
 | `operatorPolicies[].operatorGroup.targetNamespaces` | List of target namespaces | No |
 | `operatorPolicies[].subscription.channel` | Channel for operator subscription | Yes |
@@ -159,6 +162,7 @@ given compliance state. The chart exposes this at both levels:
 | `compliance` | Compliance state to wait for (`Compliant`, `NonCompliant`, `Pending`) | `Compliant` |
 | `policyRef` | For the template kinds, the policy that owns the object being referenced | The policy the dependency is declared under |
 | `release` | For `kind: Policy`, the Helm release that rendered it — use this to depend on another PolicyStack component | `.Release.Name` |
+| `element` | For `kind: Policy`, the *element* that rendered it. Resolves to `<name>-<element>-<cluster>`, reusing this release's own cluster suffix — so unlike `release` it stays correct on every cluster. See [Depending on another component](#depending-on-another-component). | — |
 | `raw` | Use `name` verbatim, skipping all prefixing/suffixing | `false` |
 | `namespace` | Explicit namespace override | `policyNamespace` for `kind: Policy`, otherwise omitted |
 | `apiVersion` | Explicit apiVersion override | Derived from `kind` |
@@ -168,6 +172,7 @@ Name resolution mirrors how the chart generates objects:
 | Dependency kind | Resolves to |
 |---|---|
 | `Policy` | `<name>-<release>` in `policyNamespace` |
+| `Policy` + `element` | `<name>-<element>-<cluster>` in `policyNamespace` |
 | `ConfigurationPolicy` / `OperatorPolicy` / `CertificatePolicy` | `<policyRef>-<name>`, with **no namespace** |
 
 > The namespace is deliberately left off for the template kinds. Those objects are replicated into
@@ -234,19 +239,108 @@ stack:
 
 ### Depending on another component
 
-Each PolicyStack component is its own Helm release, so a `Policy` in another component carries a
-different release suffix. Use `release` for that, or `raw` for a policy the chart did not generate:
+Each PolicyStack component is its own Helm release named `<element>-<cluster>`, so a `Policy` in
+another component differs only in the *element* half of that suffix. Use `element` — the chart
+reuses this release's own cluster suffix, so one line is correct on every cluster and can live in a
+shared values file:
 
 ```yaml
 policies:
-  - name: workloads
+  - name: config
     enabled: true
     dependencies:
-      - name: cluster-bootstrap
-        release: platform-base       # -> cluster-bootstrap-platform-base
-      - name: hand-made-policy
-        raw: true                    # -> hand-made-policy
+      - name: install
+        element: cert-manager        # -> install-cert-manager-<this cluster>
 ```
+
+Rendered from release `node-maintenance-prod-east-1`, that resolves to
+`install-cert-manager-prod-east-1` in `policyNamespace`.
+
+`release` still works when you need to pin an exact release, and `raw` for a policy the chart did
+not generate. Precedence is `raw` > `release` > `element` > `.Release.Name`:
+
+```yaml
+      - name: cluster-bootstrap
+        release: platform-base-prod-east-1   # -> cluster-bootstrap-platform-base-prod-east-1
+      - name: hand-made-policy
+        raw: true                            # -> hand-made-policy
+```
+
+`element` is only valid for `kind: Policy`. The template kinds are replicated into each managed
+cluster's own namespace and carry no release suffix, so a cross-component dependency must target the
+owning `Policy`; using `element` on one fails the render.
+
+> The cluster suffix is derived by stripping the chart name from `Release.Name`, so the release must
+> be named `<chart-name>-<cluster>` — which is exactly what PolicyStack's ApplicationSet does. A
+> release named otherwise fails the render with an explanatory message rather than silently
+> producing a dependency that can never match.
+
+### Toggles
+
+`policies[]`, `configPolicies[]`, `operatorPolicies[]`, `certificatePolicies[]` and `policySets[]`
+are lists, and Helm **replaces** lists rather than merging them. Without help, turning one
+sub-feature on for one cluster means restating the entire list in that cluster's values file.
+
+`toggles` is a component-level map keyed by an entry's `name`. When a key is present it overrides
+that entry's `enabled`:
+
+```yaml
+stack:
+  certManager:
+    enabled: true
+    toggles:
+      api-cert: true       # entry declared `enabled: false` -> rendered
+      ingress-cert: false  # entry declared `enabled: true`  -> not rendered
+```
+
+Because it is a map it merges cleanly through the whole values cascade, so a per-cluster override is
+one line. Toggles are applied everywhere `enabled` is evaluated — policy rendering, PlacementBinding
+subjects, PolicySets, and the `waitForOperator` lookup — so a toggled-off entry disappears
+completely rather than leaving a dangling reference. Entry names should be unique across the lists
+within a component.
+
+### Raw object templates
+
+`object-templates-raw` is an ACM field that takes a single template string and *replaces*
+`object-templates`. Use it when the manifest must emit a **variable number of objects** decided on
+the managed cluster — an ACM `lookup` combined with a `range` — which `object-templates` cannot
+express.
+
+```yaml
+configPolicies:
+  - name: machinesets
+    enabled: true
+    policyRef: nodes
+    rawTemplate: true        # exactly one templateNames entry
+    templateNames:
+      - name: machineset
+```
+
+The converter is rendered by Helm as usual and its output is emitted verbatim under
+`object-templates-raw`, so it must produce the full list of `- complianceType: / objectDefinition:`
+entries itself. Braces meant for ACM have to be escaped from Helm:
+
+```yaml
+{{- range $zone, $cfg := .Parameters.zones }}
+- complianceType: musthave
+  objectDefinition:
+    apiVersion: machine.openshift.io/v1beta1
+    kind: MachineSet
+    metadata:
+      name: {{ "{{" }} (lookup "config.openshift.io/v1" "Infrastructure" "" "cluster").status.infrastructureName {{ "}}" }}-{{ $zone }}
+    spec:
+      replicas: {{ $cfg.replicas }}
+{{- end }}
+```
+
+Here the Helm `range` resolves at render time from values, while the escaped `lookup` survives to
+the managed cluster for ACM to evaluate. Setting `rawTemplate: true` with more than one
+`templateNames` entry fails the render.
+
+Note this is unrelated to `disableTemplating`, which sets
+`policy.open-cluster-management.io/disable-templates` and stops **ACM** from evaluating templates.
+Escaping is what protects braces from Helm; `disableTemplating` is for manifests whose `{{ }}` is
+meant for some other engine entirely.
 
 
 ## Example: Deploying Multiple Policies
