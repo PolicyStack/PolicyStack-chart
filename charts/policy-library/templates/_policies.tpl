@@ -17,7 +17,7 @@ Main policy processing template with templateParameters support
 
 {{/* Process custom policies */}}
 {{- range $component.policies }}
-{{- if .enabled }}
+{{- if eq (include "policy-library.enabled" (dict "component" $component "entry" .)) "true" }}
 {{- $policyName := .name }}
 {{- $policyNamespace := $root.Values.policyNamespace }}
 {{- $policyValues := . }}
@@ -74,12 +74,13 @@ spec:
   {{- if $orderPolicies }}{{- $prevPolicy = $policyName }}{{- end }}
   policy-templates:
   {{- range $component.configPolicies -}}
-  {{- if and .enabled (eq .policyRef $policyName) -}}
+  {{- if and (eq (include "policy-library.enabled" (dict "component" $component "entry" .)) "true") (eq .policyRef $policyName) -}}
   {{- $configName := printf "%s-%s" $policyName .name }}
   {{- $severity := default "low" .severity }}
   {{- $complianceType := .complianceType }}
   {{- $remediationAction := default "inform" .remediationAction }}
   {{- $templateNames := .templateNames }}
+  {{- $rawTemplate := .rawTemplate | default false }}
   {{/* Create context with parameters if enableTemplateParameters is true */}}
   {{- $templateContext := $root }}
   {{- if .enableTemplateParameters }}
@@ -131,6 +132,28 @@ spec:
           {{- end }}
           remediationAction: {{ $remediationAction }}
           severity: {{ $severity }}
+          {{- if $rawTemplate }}
+          {{- /*
+          object-templates-raw is a single string field that REPLACES object-templates, so it can
+          only ever come from one converter. Use it when the manifest must emit a variable number of
+          objects decided on the managed cluster (an ACM `lookup` + `range`), which object-templates
+          cannot express. The converter keeps its ACM braces escaped Helm-side.
+          */ -}}
+          {{- if ne (len $templateNames) 1 }}
+          {{- fail (printf "policy-library: configPolicy %q sets rawTemplate: true, which maps to the single-valued object-templates-raw field, so it needs exactly one templateNames entry (got %d)" $configName (len $templateNames)) }}
+          {{- end }}
+          {{- $rawEntry := first $templateNames }}
+          {{- $rawName := "" }}
+          {{- if kindIs "string" $rawEntry }}{{- $rawName = $rawEntry }}{{- else }}{{- $rawName = $rawEntry.name }}{{- end }}
+          {{- $rawContent := tpl ($root.Files.Get (printf "converters/%s.yaml" $rawName)) $templateContext | trim }}
+          {{- /*
+          A raw converter driven by a values map renders to nothing when that map is empty. An empty
+          object-templates-raw is not parseable, so emit an explicit empty list instead - the policy
+          then simply has no objects to enforce rather than failing.
+          */ -}}
+          {{- if not $rawContent }}{{- $rawContent = "[]" }}{{- end }}
+          object-templates-raw: |{{- $rawContent | nindent 12 }}
+          {{- else }}
           object-templates:
           {{- range $templateNames -}}
           {{- $templatePath := printf "converters/%s.yaml" .name }}
@@ -153,10 +176,11 @@ spec:
               objectSelector: {{ nindent 16 (toYaml .objectSelector)}}
               {{- end }}
               objectDefinition:{{- nindent 16 ( trim $templateContent) }}
-          {{- end -}}
+          {{- end }}
+          {{- end }}
   {{- end -}}{{- end -}}
   {{- range $component.operatorPolicies -}}
-  {{- if and .enabled (eq .policyRef $policyName) }}
+  {{- if and (eq (include "policy-library.enabled" (dict "component" $component "entry" .)) "true") (eq .policyRef $policyName) }}
   {{- $configName := printf "%s-%s" $policyName .name }}
   {{- $severity := default $policyValues.severity .severity }}
   {{- $complianceType := default "musthave" .complianceType }}
@@ -223,12 +247,16 @@ spec:
           remediationAction: {{ $remediationAction }}
           severity: {{ $severity }}
           complianceType: {{ $complianceType }}
+          {{- /*
+          operatorGroup is optional: omitting it means "name defaults to the subscription name,
+          install cluster-scoped". Parenthesised access keeps that working - a bare
+          .operatorGroup.name panics when the whole map is absent.
+          */}}
           operatorGroup:
-            name: {{ .operatorGroup.name | default .subscription.name }}
+            name: {{ (.operatorGroup).name | default .subscription.name }}
             namespace: {{ .namespace }}
-            {{- if .operatorGroup.targetNamespaces }}
-            targetNamespaces:
-              {{ .operatorGroup.targetNamespaces }}
+            {{- with (.operatorGroup).targetNamespaces }}
+            targetNamespaces:{{ nindent 14 (toYaml .) }}
             {{- end }}
           subscription:
             name: {{ .subscription.name }}
@@ -255,7 +283,7 @@ spec:
           {{- end }}
   {{- end -}}{{- end -}}
   {{- range $component.certificatePolicies -}}
-  {{- if and .enabled (eq .policyRef $policyName) }}
+  {{- if and (eq (include "policy-library.enabled" (dict "component" $component "entry" .)) "true") (eq .policyRef $policyName) }}
   {{- $configName := printf "%s-%s" $policyName .name }}
   {{- $severity := default "low" .severity }}
   {{- $remediationAction := default "inform" .remediationAction }}

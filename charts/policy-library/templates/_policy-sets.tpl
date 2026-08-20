@@ -13,7 +13,7 @@ Main policy processing template with templateParameters support
 
 {{/* Process custom policies */}}
 {{- range $component.policySets }}
-{{- if and .enabled .policies }}
+{{- if and (eq (include "policy-library.enabled" (dict "component" $component "entry" .)) "true") .policies }}
 {{- $policySetName := .name }}
 {{- $policyNamespace := $root.Values.policyNamespace }}
 {{- $policyValues := . }}

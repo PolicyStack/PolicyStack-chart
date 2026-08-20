@@ -51,7 +51,7 @@ placementRef:
 subjects:
 {{- if $usePolicySetsPlacements }}
 {{- range $component.policySets }}
-{{- if and .enabled .policies }}
+{{- if and (eq (include "policy-library.enabled" (dict "component" $component "entry" .)) "true") .policies }}
 {{- $policySetName := .name }}
   - name: {{ $policySetName }}-{{ $root.Release.Name }}
     kind: PolicySet
@@ -60,7 +60,7 @@ subjects:
 {{- end }}
 {{- else if not $usePolicySetsPlacements }}
 {{- range $component.policies }}
-{{- if .enabled }}
+{{- if eq (include "policy-library.enabled" (dict "component" $component "entry" .)) "true" }}
 {{- $policyName := .name }}
 {{- $hasSubPolicies := include "hasPolicySubPolicies" (dict "policy" . "component" $component "root" $root) }}
 {{- if eq $hasSubPolicies "true" }}
