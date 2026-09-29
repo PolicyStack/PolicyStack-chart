@@ -22,6 +22,7 @@ apiVersion: policy.open-cluster-management.io/v1beta1
 kind: PolicySet
 metadata:
   name: {{ $policySetName }}-{{ $root.Release.Name }}
+  namespace: {{ $policyNamespace }}
 spec:
   policies:
     {{- range .policies }}

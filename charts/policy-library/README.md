@@ -9,7 +9,7 @@ Add chart as a dependency in a `Chart.yaml`
 ```
 dependencies:
   - name: policy-library
-    version: "1.x.x"
+    version: "2.x.x"
     repository: "repo"
 ```
 
@@ -21,7 +21,8 @@ Create a template that calls the policy library `render` function.
 All of these will need to be at the root of the values file.  
 | Parameter | Description | Required |
 |-----------|-------------|----------|
-| `selector` | If using default placements, the selector map can be used. More information [here](#selector-overview) | No |
+| `selector` | Label selector for the generated Placement. More information [here](#placement-overview) | No |
+| `placement` | Extra `Placement.spec` fields (claim/CEL selectors, tolerations, clusterSets, ...). More information [here](#placement-overview) | No |
 | `policyNamespace` | Namespace that these policies will be created in | Yes |
 
 ### Root Component Options
@@ -32,8 +33,8 @@ All of these will need to be under the `stack.<chartName>` dict. The chart name 
 | `default.standards` | Default standards for each policy | No |
 | `default.controls` | Default controls for each policy | No |
 | `default.categories` | Default categories for each policy | No |
-| `disablePlacements` | By default, placementrules and placementbindings will be generated based on a `selector` key. Set to true to disable those placements to use your own. | No |
-| `usePolicySetsPlacements` | By default, placementrules and placement bindings are generated for the policies directly. When this is set to true, the rules/bindings will be generated for the policySets instead of the policies themselves. | No |
+| `disablePlacements` | By default, a Placement and PlacementBinding are generated from the `selector` and `placement` keys. Set to true to disable them and use your own. | No |
+| `usePolicySetsPlacements` | By default, the PlacementBinding binds the policies directly. When this is set to true, it binds the policySets instead of the policies themselves. | No |
 | `orderPolicies` | When true, each policy in `policies[]` gets an ACM dependency on the previous one, so they are applied in declaration order. See [Policy Dependencies](#policy-dependencies). | No |
 | `orderManifests` | When true, the policy-templates inside each policy get `extraDependencies` chaining them in render order. Overridable per policy. | No |
 | `toggles` | Map keyed by an entry's `name` that overrides that entry's `enabled`. See [Toggles](#toggles). | No |
@@ -415,7 +416,11 @@ stack:
         versions:
           - oadp-operator.v1.5.0
 ```
-## Selector Overview
+## Placement Overview
+Each release renders one `cluster.open-cluster-management.io/v1beta1` Placement and, when there is at least one enabled
+Policy (or PolicySet with `usePolicySetsPlacements`) to bind, one PlacementBinding. Both are named after the release and
+created in `policyNamespace`.
+
 ```yaml
 selector:               #top level selector map
   matchExpressions:     #matches labels on managedCluster resources
@@ -424,7 +429,30 @@ selector:               #top level selector map
       operator: In      #Operator for label value
       values:           #List of values to match
         - dev
+
+placement:              #optional, top level. Merged into the Placement spec
+  claimSelector:        #ANDed with selector: match ClusterClaims (e.g. platform.open-cluster-management.io)
+    matchExpressions:
+      - key: platform.open-cluster-management.io
+        operator: In
+        values:
+          - AWS
+  celSelector:          #ANDed with selector: CEL expressions against the ManagedCluster (ACM 2.14+)
+    celExpressions:
+      - managedCluster.metadata.labels["vendor"] == "OpenShift"
+  # tolerations: []     #omit to tolerate the unreachable/unavailable taints (default); [] drops disconnected clusters
+  predicates: []        #extra predicates, ORed with the generated one
+  clusterSets:          #any other Placement.spec field (clusterSets, numberOfClusters, prioritizerPolicy, ...) is passed through verbatim
+    - global
 ```
+
+- `selector`, `claimSelector` and `celSelector` form a single predicate, so a cluster must match all of them. Entries
+  in `placement.predicates` are ORed with it and widen the placement.
+- When `tolerations` is not set (or null), the Placement tolerates `cluster.open-cluster-management.io/unreachable` and
+  `cluster.open-cluster-management.io/unavailable`, so policies stay bound (with their status history) while a cluster is
+  disconnected. Set `tolerations: []` to drop disconnected clusters from the placement instead.
+- A Placement only selects clusters from ManagedClusterSets bound to its namespace. `policyNamespace` needs a
+  ManagedClusterSetBinding (e.g. for the `global` set), plus one for each other set listed in `clusterSets`.
 ## Notes
 
 - Policies without attached configuration or operator policies will not be created
@@ -435,8 +463,8 @@ selector:               #top level selector map
 
 ## Resources Created
 
-For each policy, the chart creates:
-- A Policy resource
-- A PlacementRule resource
-- A PlacementBinding resource
+For each release, the chart creates:
+- A Policy resource per enabled policy
+- A Placement resource
+- A PlacementBinding resource, when there is at least one enabled Policy/PolicySet to bind
 - ConfigurationPolicy / OperatorPolicy / CertificatePolicy / PolicySet resources as defined
