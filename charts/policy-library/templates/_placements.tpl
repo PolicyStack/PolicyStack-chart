@@ -16,61 +16,56 @@ Function to pull in placement resources for Policies or PolicySets
 
 {{/* Process custom policies */}}
 {{- if not $component.disablePlacements | default false }}
+{{/*
+.Values.placement is the Placement spec. claimSelector/celSelector are ANDed into the predicate built
+from .Values.selector, extra predicates are appended (ORed), and every other key passes through.
+Tolerating unreachable/unavailable by default keeps policies bound while a cluster is disconnected.
+*/}}
+{{- $placement := deepCopy ($root.Values.placement | default dict) }}
+{{- if kindIs "invalid" $placement.tolerations }}
+{{- $_ := set $placement "tolerations" (list (dict "key" "cluster.open-cluster-management.io/unreachable" "operator" "Exists") (dict "key" "cluster.open-cluster-management.io/unavailable" "operator" "Exists")) }}
+{{- end }}
+{{- $matchExpressions := list }}
+{{- range $root.Values.selector.matchExpressions }}
+{{- $matchExpressions = append $matchExpressions . }}
+{{- end }}
+{{- $clusterSelector := set (pick $placement "claimSelector" "celSelector") "labelSelector" (dict "matchExpressions" $matchExpressions) }}
+{{- $_ := set $placement "predicates" (prepend ($placement.predicates | default list) (dict "requiredClusterSelector" $clusterSelector)) }}
 ---
-apiVersion: apps.open-cluster-management.io/v1
-kind: PlacementRule
+apiVersion: cluster.open-cluster-management.io/v1beta1
+kind: Placement
 metadata:
-  name: placement-{{ $root.Release.Name }}
+  name: {{ $root.Release.Name }}
   namespace: {{ $policyNamespace }}
 spec:
-  clusterConditions:
-    - status: "True"
-      type: ManagedClusterConditionAvailable
-  clusterSelector:
-    matchExpressions:
-    {{- range $name, $expression := $root.Values.selector.matchExpressions }}
-    - key: {{ $expression.key }}
-      operator: {{ $expression.operator }}
-      values:
-      {{- range $expression.values }}
-      - {{ . }}
-      {{- end }}
-    {{- end }}
-{{- $hasAnyPolicies := include "hasAnyPoliciesWithSubPolicies" (dict "component" $component "root" $root) -}}
-{{- if eq $hasAnyPolicies "true" }}
+  {{- omit $placement "claimSelector" "celSelector" | toYaml | nindent 2 }}
+{{- $subjects := list }}
+{{- if $usePolicySetsPlacements }}
+{{- range $component.policySets }}
+{{- if and (eq (include "policy-library.enabled" (dict "component" $component "entry" .)) "true") .policies }}
+{{- $subjects = append $subjects (dict "name" (printf "%s-%s" .name $root.Release.Name) "kind" "PolicySet" "apiGroup" "policy.open-cluster-management.io") }}
+{{- end }}
+{{- end }}
+{{- else }}
+{{- range $component.policies }}
+{{- if and (eq (include "policy-library.enabled" (dict "component" $component "entry" .)) "true") (eq (include "hasPolicySubPolicies" (dict "policy" . "component" $component "root" $root)) "true") }}
+{{- $subjects = append $subjects (dict "name" (printf "%s-%s" .name $root.Release.Name) "kind" "Policy" "apiGroup" "policy.open-cluster-management.io") }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- with $subjects }}
 ---
 apiVersion: policy.open-cluster-management.io/v1
 kind: PlacementBinding
 metadata:
-  name: placement-{{ $root.Release.Name }}
+  name: {{ $root.Release.Name }}
   namespace: {{ $policyNamespace }}
 placementRef:
-  name: placement-{{ $root.Release.Name }}
-  kind: PlacementRule
-  apiGroup: apps.open-cluster-management.io
+  name: {{ $root.Release.Name }}
+  kind: Placement
+  apiGroup: cluster.open-cluster-management.io
 subjects:
-{{- if $usePolicySetsPlacements }}
-{{- range $component.policySets }}
-{{- if and (eq (include "policy-library.enabled" (dict "component" $component "entry" .)) "true") .policies }}
-{{- $policySetName := .name }}
-  - name: {{ $policySetName }}-{{ $root.Release.Name }}
-    kind: PolicySet
-    apiGroup: policy.open-cluster-management.io
-{{- end }}
-{{- end }}
-{{- else if not $usePolicySetsPlacements }}
-{{- range $component.policies }}
-{{- if eq (include "policy-library.enabled" (dict "component" $component "entry" .)) "true" }}
-{{- $policyName := .name }}
-{{- $hasSubPolicies := include "hasPolicySubPolicies" (dict "policy" . "component" $component "root" $root) }}
-{{- if eq $hasSubPolicies "true" }}
-  - name: {{ $policyName }}-{{ $root.Release.Name }}
-    kind: Policy
-    apiGroup: policy.open-cluster-management.io
-{{- end }}
-{{- end }}
-{{- end }}
-{{- end }}
+  {{- toYaml . | nindent 2 }}
 {{- end }}
 {{- end }}
 {{- end }}

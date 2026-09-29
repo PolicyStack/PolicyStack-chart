@@ -55,24 +55,6 @@ Helper function to check if a policy has any enabled configPolicies or operatorP
 {{- end -}}
 
 {{/*
-Helper function to check if any policy in the component has sub-policies
-*/}}
-{{- define "hasAnyPoliciesWithSubPolicies" -}}
-{{- $component := .component -}}
-{{- $root := .root -}}
-{{- $found := false -}}
-{{- range $component.policies -}}
-  {{- if eq (include "policy-library.enabled" (dict "component" $component "entry" .)) "true" -}}
-    {{- $hasSubPolicies := include "hasPolicySubPolicies" (dict "policy" . "component" $component "root" $root) -}}
-    {{- if eq $hasSubPolicies "true" -}}
-      {{- $found = true -}}
-    {{- end -}}
-  {{- end -}}
-{{- end -}}
-{{- $found -}}
-{{- end -}}
-
-{{/*
 Resolve a list of dependency entries into ACM PolicyDependency YAML.
 
 Each entry accepts: name (required), kind, apiVersion, namespace, compliance, release, element,

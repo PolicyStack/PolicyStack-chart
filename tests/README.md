@@ -15,6 +15,9 @@ helm template test .
 # Every dependency / ordering key
 helm template test . -f values-dependencies.yaml
 
+# Every placement key (2.0.0)
+helm template test . -f values-2.0.yaml
+
 helm lint .
 ```
 
