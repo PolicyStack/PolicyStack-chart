@@ -38,6 +38,7 @@ All of these will need to be under the `stack.<chartName>` dict. The chart name 
 | `orderPolicies` | When true, each policy in `policies[]` gets an ACM dependency on the previous one, so they are applied in declaration order. See [Policy Dependencies](#policy-dependencies). | No |
 | `orderManifests` | When true, the policy-templates inside each policy get `extraDependencies` chaining them in render order. Overridable per policy. | No |
 | `toggles` | Map keyed by an entry's `name` that overrides that entry's `enabled`. See [Toggles](#toggles). | No |
+| `suffixTemplateNames` | When true, every ConfigurationPolicy, OperatorPolicy and CertificatePolicy name gets `-<cluster>` appended, where `<cluster>` is `Release.Name` minus `<chart>-`. Dependencies on template kinds follow. Use it when one release per cluster is placed on the same cluster (e.g. the hub), since ACM requires template names to be unique per cluster. | No |
 
 ### Custom Policy Options
 All of these will need to be under the `stack.<chartName>` dict. The chart name is taken from the chart of the parent but camelCased.  
@@ -73,6 +74,7 @@ All of these will need to be under the `stack.<chartName>` dict. The chart name 
 | `configPolicies[].severity` | Override severity level | No |
 | `configPolicies[].remediationAction` | Override remediation action | No |
 | `configPolicies[].complianceType` | Compliance type (musthave, mustnothave, mustonlyhave) | No |
+| `configPolicies[].pruneObjectBehavior` | What happens to objects this policy created when the policy is deleted: `None` (ACM default), `DeleteIfCreated` or `DeleteAll` | No |
 | `configPolicies[].templateNames[].name` | Name of template file in converters directory w/o the .yaml | Yes |
 | `configPolicies[].templateNames[].complianceType` | Compliance type for this specific file. Will default to musthave if the parent configPolicy complianceType is not set. | No |
 | `configPolicies[].templateNames[].metadataComplianceType` | Compliance type for any metadata. This is independent of the complianceType value. | No |

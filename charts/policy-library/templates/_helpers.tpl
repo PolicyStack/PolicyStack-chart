@@ -55,6 +55,43 @@ Helper function to check if a policy has any enabled configPolicies or operatorP
 {{- end -}}
 
 {{/*
+The release name is "<chart>-<cluster>" (the ApplicationSet names each Application
+"<element>-<cluster>", and Argo CD uses that as the Helm release name). Strip the chart-name prefix
+to recover the cluster suffix, which is the half a sibling element shares with us. Derived from
+Release.Name rather than a value such as .Values.selectedName so it also works under a plain
+`helm template` and in CI, where no ApplicationSet has injected anything.
+
+Returns the empty string when Release.Name does not start with "<chart>-".
+*/}}
+{{- define "policy-library.clusterSuffix" -}}
+{{- if hasPrefix (printf "%s-" .Chart.Name) .Release.Name -}}
+{{- trimPrefix (printf "%s-" .Chart.Name) .Release.Name -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Name of a policy-template object (ConfigurationPolicy, OperatorPolicy, CertificatePolicy):
+"<policyRef>-<name>", plus "-<cluster>" when the component sets suffixTemplateNames.
+
+ACM requires template names to be unique across every Policy placed on a cluster. Elements render
+one release per cluster, so the bare name is unique. A chart that renders one release per cluster
+but places every release on the same cluster (e.g. the hub) sets suffixTemplateNames instead.
+
+Args: dict "root" <root context> "component" <stack component> "policyRef" <policy> "name" <entry>
+*/}}
+{{- define "policy-library.templateName" -}}
+{{- $name := printf "%s-%s" .policyRef .name -}}
+{{- if (.component).suffixTemplateNames -}}
+  {{- $suffix := include "policy-library.clusterSuffix" .root -}}
+  {{- if not $suffix -}}
+    {{- fail (printf "policy-library: suffixTemplateNames requires Release.Name (%q) to start with the chart name %q" .root.Release.Name .root.Chart.Name) -}}
+  {{- end -}}
+  {{- $name = printf "%s-%s" $name $suffix -}}
+{{- end -}}
+{{- $name -}}
+{{- end -}}
+
+{{/*
 Resolve a list of dependency entries into ACM PolicyDependency YAML.
 
 Each entry accepts: name (required), kind, apiVersion, namespace, compliance, release, element,
@@ -68,31 +105,23 @@ sub-policies by the names they were declared with:
                            Helm release named "<chart>-<cluster>", so the target's release name
                            differs only in the element half. Unlike "release", this stays correct on
                            every cluster, so it can live in a shared values file.
-  - template kinds      -> "<policyRef>-<name>"    (policyRef defaults to the owning policy)
+  - template kinds      -> "<policyRef>-<name>"    (policyRef defaults to the owning policy;
+                           "-<cluster>" is appended under suffixTemplateNames)
   - raw: true           -> name is used verbatim
 Precedence for kind Policy: raw > release > element > .Release.Name.
 Namespace is only emitted for kind Policy. Template kinds (ConfigurationPolicy, OperatorPolicy,
 CertificatePolicy) live in the per-cluster namespace on the managed cluster, so ACM resolves that
 itself and the field must be left off.
 
-Args: dict "deps" <list> "root" <root context> "policyRef" <owning policy name> "defaultKind" <kind>
+Args: dict "deps" <list> "root" <root context> "component" <stack component>
+           "policyRef" <owning policy name> "defaultKind" <kind>
 */}}
 {{- define "policy-library.dependencyList" -}}
 {{- $root := .root -}}
 {{- $policyRef := .policyRef -}}
 {{- $defaultKind := .defaultKind | default "Policy" -}}
 {{- $out := list -}}
-{{/*
-The release name is "<chart>-<cluster>" (the ApplicationSet names each Application
-"<element>-<cluster>", and Argo CD uses that as the Helm release name). Strip the chart-name prefix
-to recover the cluster suffix, which is the half a sibling element shares with us. Derived from
-Release.Name rather than a value such as .Values.selectedName so it also works under a plain
-`helm template` and in CI, where no ApplicationSet has injected anything.
-*/}}
-{{- $clusterSuffix := "" -}}
-{{- if hasPrefix (printf "%s-" $root.Chart.Name) $root.Release.Name -}}
-  {{- $clusterSuffix = trimPrefix (printf "%s-" $root.Chart.Name) $root.Release.Name -}}
-{{- end -}}
+{{- $clusterSuffix := include "policy-library.clusterSuffix" $root -}}
 {{- range .deps -}}
   {{- if not .name -}}
     {{- fail (printf "policy-library: dependency entry requires a 'name' (policy %q)" $policyRef) -}}
@@ -125,7 +154,7 @@ Release.Name rather than a value such as .Values.selectedName so it also works u
       {{- if .element -}}
         {{- fail (printf "policy-library: dependency element:%q on policy %q is only valid for kind Policy - %s objects are namespaced to the managed cluster and carry no release suffix, so depend on the owning Policy instead" .element $policyRef $kind) -}}
       {{- end -}}
-      {{- $name = printf "%s-%s" (.policyRef | default $policyRef) .name -}}
+      {{- $name = include "policy-library.templateName" (dict "root" $root "component" $.component "policyRef" (.policyRef | default $policyRef) "name" .name) -}}
     {{- end -}}
   {{- end -}}
   {{- $namespace := .namespace -}}
@@ -187,11 +216,11 @@ Args: dict "root" <root context> "component" <stack component> "policyRef" <owni
       {{- fail (printf "policy-library: waitForOperator %q on policy %q is ambiguous (declared under %v) - use extraDependencies instead" $operator $policyRef $owners) -}}
     {{- end -}}
   {{- end -}}
-  {{- $deps = append $deps (dict "name" (printf "%s-%s-status" $owner $operator) "kind" "ConfigurationPolicy" "raw" true) -}}
+  {{- $deps = append $deps (dict "name" (printf "%s-status" (include "policy-library.templateName" (dict "root" $root "component" $component "policyRef" $owner "name" $operator))) "kind" "ConfigurationPolicy" "raw" true) -}}
 {{- end -}}
 {{- $deps = concat $deps ($sub.extraDependencies | default list) -}}
 {{- if $deps -}}
-{{- include "policy-library.dependencyList" (dict "deps" $deps "root" $root "policyRef" $policyRef "defaultKind" "ConfigurationPolicy") -}}
+{{- include "policy-library.dependencyList" (dict "deps" $deps "root" $root "component" $component "policyRef" $policyRef "defaultKind" "ConfigurationPolicy") -}}
 {{- end -}}
 {{- end -}}
 

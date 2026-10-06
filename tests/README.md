@@ -18,6 +18,9 @@ helm template test . -f values-dependencies.yaml
 # Every placement key (2.0.0)
 helm template test . -f values-2.0.yaml
 
+# suffixTemplateNames (2.1.0); needs a "<chart>-<cluster>" release name
+helm template policy-stack-test-c1 . -f values-dependencies.yaml -f values-2.1.yaml
+
 helm lint .
 ```
 
