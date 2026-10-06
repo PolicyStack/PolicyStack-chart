@@ -69,13 +69,13 @@ spec:
   disabled: {{ .disabled }}
   {{- if $policyDeps }}
   dependencies:
-    {{- include "policy-library.dependencyList" (dict "deps" $policyDeps "root" $root "policyRef" $policyName "defaultKind" "Policy") | nindent 4 }}
+    {{- include "policy-library.dependencyList" (dict "deps" $policyDeps "root" $root "component" $component "policyRef" $policyName "defaultKind" "Policy") | nindent 4 }}
   {{- end }}
   {{- if $orderPolicies }}{{- $prevPolicy = $policyName }}{{- end }}
   policy-templates:
   {{- range $component.configPolicies -}}
   {{- if and (eq (include "policy-library.enabled" (dict "component" $component "entry" .)) "true") (eq .policyRef $policyName) -}}
-  {{- $configName := printf "%s-%s" $policyName .name }}
+  {{- $configName := include "policy-library.templateName" (dict "root" $root "component" $component "policyRef" $policyName "name" .name) }}
   {{- $severity := default "low" .severity }}
   {{- $complianceType := .complianceType }}
   {{- $remediationAction := default "inform" .remediationAction }}
@@ -181,7 +181,7 @@ spec:
   {{- end -}}{{- end -}}
   {{- range $component.operatorPolicies -}}
   {{- if and (eq (include "policy-library.enabled" (dict "component" $component "entry" .)) "true") (eq .policyRef $policyName) }}
-  {{- $configName := printf "%s-%s" $policyName .name }}
+  {{- $configName := include "policy-library.templateName" (dict "root" $root "component" $component "policyRef" $policyName "name" .name) }}
   {{- $severity := default $policyValues.severity .severity }}
   {{- $complianceType := default "musthave" .complianceType }}
   {{- $remediationAction := default $policyValues.remediationAction .remediationAction }}
@@ -284,7 +284,7 @@ spec:
   {{- end -}}{{- end -}}
   {{- range $component.certificatePolicies -}}
   {{- if and (eq (include "policy-library.enabled" (dict "component" $component "entry" .)) "true") (eq .policyRef $policyName) }}
-  {{- $configName := printf "%s-%s" $policyName .name }}
+  {{- $configName := include "policy-library.templateName" (dict "root" $root "component" $component "policyRef" $policyName "name" .name) }}
   {{- $severity := default "low" .severity }}
   {{- $remediationAction := default "inform" .remediationAction }}
   {{- $depsYaml := include "policy-library.subPolicyDependencies" (dict "root" $root "component" $component "policyRef" $policyName "subPolicy" . "prev" (ternary $prevManifest dict $orderManifests)) }}
