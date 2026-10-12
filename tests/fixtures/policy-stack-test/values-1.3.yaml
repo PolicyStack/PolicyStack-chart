@@ -13,8 +13,8 @@ stack:
   policyStackTest:
     enabled: true
 
-    # toggles override policies[].enabled / configPolicies[].enabled by name. A map, so a cluster
-    # values file can flip one sub-feature without restating the whole list.
+    # toggles override enabled by entry name. A map, so a cluster values file can flip one
+    # policies[] / configPolicies[] entry without restating the whole list.
     toggles:
       opt-in: true        # declared enabled: false below -> forced ON
       opt-out: false      # declared enabled: true  below -> forced OFF
@@ -58,8 +58,10 @@ stack:
         remediationAction: inform
 
     operatorPolicies:
-      - name: oadp
+      # Maps merge, so values.yaml's oadp.description would carry over; clear it.
+      oadp:
         enabled: true
+        description: ""
         policyRef: install
         displayName: "OADP Operator"
         namespace: openshift-adp
