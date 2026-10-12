@@ -6,17 +6,18 @@ Helper function to convert chart name to camelCase
 {{- end -}}
 
 {{/*
-Resolve whether a single list entry (policy / configPolicy / operatorPolicy / certificatePolicy /
+Resolve whether a single entry (policy / configPolicy / operatorPolicy / certificatePolicy /
 policySet) is enabled, honouring the component-level "toggles" map.
 
 "toggles" is a map keyed by the entry's own name. When a key is present it overrides that entry's
 "enabled" field. It exists because policies[] and configPolicies[] are lists, and Helm replaces
 lists wholesale rather than merging them - so without it, flipping one sub-feature for one cluster
-would mean restating the entire list in that cluster's values file.
+would mean restating the entire list in that cluster's values file. operatorPolicies is a map and
+merges, so operatorPolicies.<key>.enabled works per layer too; toggles still apply to its keys.
 
 Returns the string "true" when enabled, otherwise the empty string.
 
-Args: dict "component" <stack component> "entry" <list entry>
+Args: dict "component" <stack component> "entry" <entry; operatorPolicies callers inject the key as name>
 */}}
 {{- define "policy-library.enabled" -}}
 {{- $toggles := (.component).toggles | default dict -}}
@@ -41,9 +42,13 @@ Helper function to check if a policy has any enabled configPolicies or operatorP
     {{- $found = true -}}
   {{- end -}}
 {{- end -}}
-{{- range $component.operatorPolicies -}}
+{{- range $opName, $op := $component.operatorPolicies -}}
+  {{- if kindIs "map" $op -}}
+  {{- with set (deepCopy $op) "name" $opName -}}
   {{- if and (eq (include "policy-library.enabled" (dict "component" $component "entry" .)) "true") (eq .policyRef $policy.name) -}}
     {{- $found = true -}}
+  {{- end -}}
+  {{- end -}}
   {{- end -}}
 {{- end -}}
 {{- range $component.certificatePolicies -}}
@@ -178,8 +183,8 @@ Combines, in order: the automatic ordering dependency (if any), waitForOperator 
 sub-policy's own extraDependencies. ACM ANDs all entries, so concatenation is well defined.
 Returns an empty string when there is nothing to emit.
 
-waitForOperator names an entry in operatorPolicies[]; the owning policy is looked up from the
-component, so an operator installed under a different policy still resolves correctly.
+waitForOperator names a key in operatorPolicies; the owning policy is that entry's policyRef, so an
+operator installed under a different policy still resolves correctly.
 
 Args: dict "root" <root context> "component" <stack component> "policyRef" <owning policy name>
            "subPolicy" <config/operator/certificate policy entry, or an empty dict>
@@ -199,24 +204,11 @@ Args: dict "root" <root context> "component" <stack component> "policyRef" <owni
   {{- $waitFor = list $waitFor -}}
 {{- end -}}
 {{- range $operator := $waitFor -}}
-  {{- $owners := list -}}
-  {{- range $component.operatorPolicies -}}
-    {{- if and (eq (include "policy-library.enabled" (dict "component" $component "entry" .)) "true") (eq .name $operator) -}}
-      {{- $owners = append $owners .policyRef -}}
-    {{- end -}}
-  {{- end -}}
-  {{- if not $owners -}}
+  {{- $op := index ($component.operatorPolicies | default dict) $operator -}}
+  {{- if not (and (kindIs "map" $op) (eq (include "policy-library.enabled" (dict "component" $component "entry" (set (deepCopy $op) "name" $operator))) "true")) -}}
     {{- fail (printf "policy-library: waitForOperator %q on policy %q matches no enabled entry in operatorPolicies" $operator $policyRef) -}}
   {{- end -}}
-  {{- $owner := first $owners -}}
-  {{- if gt (len $owners) 1 -}}
-    {{- if has $policyRef $owners -}}
-      {{- $owner = $policyRef -}}
-    {{- else -}}
-      {{- fail (printf "policy-library: waitForOperator %q on policy %q is ambiguous (declared under %v) - use extraDependencies instead" $operator $policyRef $owners) -}}
-    {{- end -}}
-  {{- end -}}
-  {{- $deps = append $deps (dict "name" (printf "%s-status" (include "policy-library.templateName" (dict "root" $root "component" $component "policyRef" $owner "name" $operator))) "kind" "ConfigurationPolicy" "raw" true) -}}
+  {{- $deps = append $deps (dict "name" (printf "%s-status" (include "policy-library.templateName" (dict "root" $root "component" $component "policyRef" $op.policyRef "name" $operator))) "kind" "ConfigurationPolicy" "raw" true) -}}
 {{- end -}}
 {{- $deps = concat $deps ($sub.extraDependencies | default list) -}}
 {{- if $deps -}}

@@ -46,8 +46,10 @@ stack:
         orderManifests: false
 
     operatorPolicies:
-      - name: oadp
+      # Maps merge, so values.yaml's oadp.description would carry over; clear it.
+      oadp:
         enabled: true
+        description: ""
         policyRef: operators
         displayName: "OADP Operator"
         namespace: openshift-adp

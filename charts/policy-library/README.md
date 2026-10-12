@@ -9,7 +9,7 @@ Add chart as a dependency in a `Chart.yaml`
 ```
 dependencies:
   - name: policy-library
-    version: "2.x.x"
+    version: "3.x.x"
     repository: "repo"
 ```
 
@@ -84,37 +84,65 @@ All of these will need to be under the `stack.<chartName>` dict. The chart name 
 | `configPolicies[].enableTemplateParameters` | Boolean value that enables the use of the extra parameters. These will go under the .Parameters dict in the chart | No |
 | `configPolicies[].templateParameters` | map of parameters that will be passed in each specific converter | No |
 | `configPolicies[].extraDependencies` | List of [dependency entries](#policy-dependencies) gating just this ConfigurationPolicy | No |
-| `configPolicies[].waitForOperator` | Name (or list of names) from `operatorPolicies[]`. Waits for the generated CSV status check before applying this configuration. | No |
+| `configPolicies[].waitForOperator` | Key (or list of keys) in `operatorPolicies`. Waits for the generated CSV status check before applying this configuration. | No |
 | `configPolicies[].ignorePending` | Treat this template as compliant while it is waiting on its dependencies | No |
 | `configPolicies[].rawTemplate` | Emit the converter under `object-templates-raw` instead of `object-templates`. Requires exactly one `templateNames` entry. See [Raw object templates](#raw-object-templates). | No |
 
 ### Operator Policy Options
+`operatorPolicies` is a map keyed by entry name, so a values layer can set one field of one operator (e.g. `operatorPolicies.oadp.versions`) without restating the rest. The key is the name; rendered objects are `<policyRef>-<key>`.
+
 All of these will need to be under the `stack.<chartName>` dict. The chart name is taken from the chart of the parent but camelCased.  
 | Parameter | Description | Required |
 |-----------|-------------|----------|
-| `operatorPolicies[].name` | Name of the operator policy | Yes |
-| `operatorPolicies[].enabled` | Enable or disable this operator policy | Yes |
-| `operatorPolicies[].description` | Description of the operator policy | No |
-| `operatorPolicies[].policyRef` | Policy to bind this operator to (empty for default) | No |
-| `operatorPolicies[].severity` | Override severity level | No |
-| `operatorPolicies[].remediationAction` | Override remediation action | No |
-| `operatorPolicies[].complianceType` | Compliance type (musthave, mustnothave, mustonlyhave) | No |
-| `operatorPolicies[].namespace` | Namespace for operator installation | Yes |
-| `operatorPolicies[].displayName` | Display name for status check | No |
-| `operatorPolicies[].versions` | List of approved versions for policies to install. Recommend to set upgradeApproval to `Automatic` | No |
-| `operatorPolicies[].operatorGroup` | Whole block is optional. Omit it to get an OperatorGroup named after the subscription, installed cluster-scoped. Set `name` to reuse a namespace's existing OperatorGroup (`global-operators` in `openshift-operators`) - a second OperatorGroup in one namespace breaks OLM. | No |
-| `operatorPolicies[].operatorGroup.name` | Name of operator group | No |
-| `operatorPolicies[].operatorGroup.targetNamespaces` | List of target namespaces | No |
-| `operatorPolicies[].subscription.channel` | Channel for operator subscription | Yes |
-| `operatorPolicies[].subscription.name` | Name of operator package | Yes |
-| `operatorPolicies[].subscription.source` | Operator source | Yes |
-| `operatorPolicies[].subscription.sourceNamespace` | Source namespace | Yes |
-| `operatorPolicies[].subscription.startingCSV` | Starting CSV version | No |
-| `operatorPolicies[].subscription.config.tolerations` | Tolerations for operator | No |
-| `operatorPolicies[].upgradeApproval` | Upgrade approval (Automatic or None) | No |
-| `operatorPolicies[].extraDependencies` | List of [dependency entries](#policy-dependencies) gating the OperatorPolicy object | No |
-| `operatorPolicies[].waitForOperator` | Name (or list of names) from `operatorPolicies[]` to wait on before installing this operator | No |
-| `operatorPolicies[].ignorePending` | Treat the OperatorPolicy as compliant while it is waiting on its dependencies | No |
+| `operatorPolicies.<key>.enabled` | Enable or disable this operator policy | Yes |
+| `operatorPolicies.<key>.description` | Description of the operator policy | No |
+| `operatorPolicies.<key>.policyRef` | Policy to bind this operator to. The render fails without it. | Yes |
+| `operatorPolicies.<key>.severity` | Override severity level | No |
+| `operatorPolicies.<key>.remediationAction` | Override remediation action | No |
+| `operatorPolicies.<key>.complianceType` | Compliance type (musthave, mustnothave, mustonlyhave) | No |
+| `operatorPolicies.<key>.namespace` | Namespace for operator installation | Yes |
+| `operatorPolicies.<key>.displayName` | Display name for status check | No |
+| `operatorPolicies.<key>.versions` | Exact CSV names allowed to install. See [Version pinning](#version-pinning). | No |
+| `operatorPolicies.<key>.operatorGroup` | Whole block is optional. Omit it to get an OperatorGroup named after the subscription, installed cluster-scoped. Set `name` to reuse a namespace's existing OperatorGroup (`global-operators` in `openshift-operators`) - a second OperatorGroup in one namespace breaks OLM. | No |
+| `operatorPolicies.<key>.operatorGroup.name` | Name of operator group | No |
+| `operatorPolicies.<key>.operatorGroup.targetNamespaces` | List of target namespaces | No |
+| `operatorPolicies.<key>.subscription.channel` | Channel for operator subscription | Yes |
+| `operatorPolicies.<key>.subscription.name` | Name of operator package | Yes |
+| `operatorPolicies.<key>.subscription.source` | Operator source | Yes |
+| `operatorPolicies.<key>.subscription.sourceNamespace` | Source namespace | Yes |
+| `operatorPolicies.<key>.subscription.startingCSV` | CSV to install first. Needed when the pinned CSV is not the channel head. | No |
+| `operatorPolicies.<key>.subscription.config.tolerations` | Tolerations for operator | No |
+| `operatorPolicies.<key>.upgradeApproval` | `Automatic` (default) or `None`. `Manual` is not valid; ACM rejects `subscription.installPlanApproval`. | No |
+| `operatorPolicies.<key>.extraDependencies` | List of [dependency entries](#policy-dependencies) gating the OperatorPolicy object | No |
+| `operatorPolicies.<key>.waitForOperator` | Key (or list of keys) in `operatorPolicies` to wait on before installing this operator | No |
+| `operatorPolicies.<key>.ignorePending` | Treat the OperatorPolicy as compliant while it is waiting on its dependencies | No |
+
+Disable an operator in a layer with `enabled: false` or `toggles.<key>: false`, not `null`. Entries that name it in `waitForOperator` must be disabled in the same layer, or the render fails. Disabling stops managing the operator; it does not uninstall it. A layer key without `policyRef`, such as a typo of an element key, fails the render.
+
+### Version pinning
+
+| `upgradeApproval` | `versions` | Effect |
+|---|---|---|
+| `Automatic` | empty | Installs and follows the channel |
+| `Automatic` | set | Installs and upgrades only to listed CSVs or `subscription.startingCSV` |
+| `None` | any | Initial install only; never approves an upgrade, even a listed one |
+
+- Entries are exact CSV names (`oadp-operator.v1.4.2`), no ranges or wildcards. Comma-separated entries need ACM 2.14+, templated entries 2.13+.
+- Set `subscription.startingCSV` when the pin is not the channel head; without it OLM resolves the head, which `versions` does not allow.
+- Bump in two steps: add the new CSV next to the old one, promote it through your layers, then remove the old one and move `startingCSV` to the new one.
+- Unpin with `versions: []`.
+
+```yaml
+# values layer, e.g. prod
+stack:
+  myComponent:
+    operatorPolicies:
+      oadp:
+        subscription:
+          startingCSV: oadp-operator.v1.4.1
+        versions:
+          - oadp-operator.v1.4.1
+```
 
 ### Certificate Policy Options
 All of these will need to be under the `stack.<chartName>` dict. The chart name is taken from the chart of the parent but camelCased.  
@@ -136,7 +164,7 @@ All of these will need to be under the `stack.<chartName>` dict. The chart name 
 | `certificatePolicies[].disallowedSANPattern` | regex that must *not* match every SAN entry that is defined in the certificates | No |
 | `certificatePolicies[].disableTemplating` | Disable templating inside the policy. This is mainly used for when a manifest has a templating agent inside the manifest | No |
 | `certificatePolicies[].extraDependencies` | List of [dependency entries](#policy-dependencies) gating this CertificatePolicy | No |
-| `certificatePolicies[].waitForOperator` | Name (or list of names) from `operatorPolicies[]` to wait on | No |
+| `certificatePolicies[].waitForOperator` | Key (or list of keys) in `operatorPolicies` to wait on | No |
 | `certificatePolicies[].ignorePending` | Treat this template as compliant while it is waiting on its dependencies | No |
 
 ### PolicySet Options
@@ -153,7 +181,7 @@ ACM can hold a policy (or a single policy-template) in a `Pending` state until o
 given compliance state. The chart exposes this at both levels:
 
 - `policies[].dependencies` &rarr; `Policy.spec.dependencies` — gates the whole policy
-- `configPolicies[]`/`operatorPolicies[]`/`certificatePolicies[]` `.extraDependencies` &rarr; `policy-templates[].extraDependencies` — gates one template
+- `configPolicies[]`/`operatorPolicies.<key>`/`certificatePolicies[]` `.extraDependencies` &rarr; `policy-templates[].extraDependencies` — gates one template
 - `.ignorePending` &rarr; `policy-templates[].ignorePending` — the template counts as compliant while it waits
 
 ### Dependency entry fields
@@ -197,6 +225,8 @@ stack:
 never rendered, so the chain links straight past it). `orderManifests` can be turned back off for a
 single policy with `policies[].orderManifests: false`. Automatic entries are emitted alongside any
 explicit `dependencies`/`extraDependencies` — ACM requires all of them, so the two can be combined.
+`operatorPolicies` chain in sorted key order. An operator that waits on another operator in the same
+policy needs a key that sorts after it, or the chain deadlocks; otherwise put them in separate policies.
 
 Operator policies render three objects, and under `orderManifests` they are chained as
 `<policy>-<operator>-ns` &rarr; `OperatorPolicy` &rarr; `<policy>-<operator>-status`, so the next
@@ -204,7 +234,7 @@ manifest in the policy waits for the operator's CSV to actually reach `Succeeded
 
 ### Waiting for an operator
 
-`waitForOperator` names an entry in `operatorPolicies[]` and expands to a dependency on that
+`waitForOperator` names a key in `operatorPolicies` and expands to a dependency on that
 operator's generated CSV status check. The owning policy is looked up from the component, so the
 operator does not have to live under the same parent policy, and a typo fails the render:
 
@@ -220,7 +250,7 @@ stack:
           - name: operators          # -> operators-<release>, kind Policy
 
     operatorPolicies:
-      - name: oadp
+      oadp:
         enabled: true
         policyRef: operators
         namespace: openshift-adp
@@ -280,11 +310,12 @@ owning `Policy`; using `element` on one fails the render.
 
 ### Toggles
 
-`policies[]`, `configPolicies[]`, `operatorPolicies[]`, `certificatePolicies[]` and `policySets[]`
-are lists, and Helm **replaces** lists rather than merging them. Without help, turning one
-sub-feature on for one cluster means restating the entire list in that cluster's values file.
+`policies[]`, `configPolicies[]`, `certificatePolicies[]` and `policySets[]` are lists, and Helm
+**replaces** lists rather than merging them. Without help, turning one sub-feature on for one cluster
+means restating the entire list in that cluster's values file. `operatorPolicies` is a map and merges,
+so `operatorPolicies.<key>.enabled` works per layer; toggles apply to its keys as well.
 
-`toggles` is a component-level map keyed by an entry's `name`. When a key is present it overrides
+`toggles` is a component-level map keyed by an entry's `name` (the key, for `operatorPolicies`). When a key is present it overrides
 that entry's `enabled`:
 
 ```yaml
@@ -395,7 +426,7 @@ stack:
           value1: somethingidk2
 
     operatorPolicies:
-      - name: oadp-operator
+      oadp-operator:
         enabled: true
         description: "Operator policy for OpenShift ADP"
         displayName: "OADP Operator"

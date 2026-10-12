@@ -11,6 +11,19 @@ Main policy processing template with templateParameters support
 {{- if $component -}}
 {{- if $component.enabled -}}
 
+{{- /*
+operatorPolicies is a map keyed by entry name, so layers merge into it. A layer key the element
+does not define merges into an entry with no policyRef, which would otherwise render nothing.
+*/ -}}
+{{- if kindIs "slice" $component.operatorPolicies -}}
+{{- fail "policy-library: operatorPolicies is a map keyed by name since policy-library 3.0.0 - move each entry's name to its key" -}}
+{{- end -}}
+{{- range $opName, $op := $component.operatorPolicies -}}
+{{- if and (kindIs "map" $op) (not $op.policyRef) -}}
+{{- fail (printf "policy-library: operatorPolicies.%s has no policyRef - a values layer may set an operator the element does not define" $opName) -}}
+{{- end -}}
+{{- end -}}
+
 {{/* Ordering: chain policies / policy-templates via ACM dependencies */}}
 {{- $orderPolicies := $component.orderPolicies | default false -}}
 {{- $prevPolicy := "" -}}
@@ -179,7 +192,9 @@ spec:
           {{- end }}
           {{- end }}
   {{- end -}}{{- end -}}
-  {{- range $component.operatorPolicies -}}
+  {{- range $opName, $op := $component.operatorPolicies -}}
+  {{- if kindIs "map" $op }}
+  {{- with set (deepCopy $op) "name" $opName }}
   {{- if and (eq (include "policy-library.enabled" (dict "component" $component "entry" .)) "true") (eq .policyRef $policyName) }}
   {{- $configName := include "policy-library.templateName" (dict "root" $root "component" $component "policyRef" $policyName "name" .name) }}
   {{- $severity := default $policyValues.severity .severity }}
@@ -278,10 +293,8 @@ spec:
             {{- if .subscription.config }}
             config: {{ nindent 14 (toYaml .subscription.config) }}
             {{- end }}
-          {{- if .upgradeApproval }}
-          upgradeApproval: {{ .upgradeApproval }}
-          {{- end }}
-  {{- end -}}{{- end -}}
+          upgradeApproval: {{ .upgradeApproval | default "Automatic" }}
+  {{- end -}}{{- end -}}{{- end -}}{{- end -}}
   {{- range $component.certificatePolicies -}}
   {{- if and (eq (include "policy-library.enabled" (dict "component" $component "entry" .)) "true") (eq .policyRef $policyName) }}
   {{- $configName := include "policy-library.templateName" (dict "root" $root "component" $component "policyRef" $policyName "name" .name) }}

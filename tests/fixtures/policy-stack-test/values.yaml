@@ -55,7 +55,7 @@ stack:
           value1: hello
 
     operatorPolicies:
-      - name: oadp
+      oadp:
         enabled: true
         description: "Operator policy for OpenShift ADP"
         displayName: "OADP Operator"

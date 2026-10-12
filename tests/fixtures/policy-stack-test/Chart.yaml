@@ -5,5 +5,5 @@ type: application
 version: 0.1.0
 dependencies:
   - name: policy-library
-    version: "2.x.x"
+    version: "3.x.x"
     repository: "file://../../../charts/policy-library"
