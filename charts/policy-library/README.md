@@ -492,6 +492,7 @@ placement:              #optional, top level. Merged into the Placement spec
 - Templates in the `converters/` directory should be valid Kubernetes manifests
 - Dependencies are evaluated on each managed cluster, so a policy can be `Pending` on one cluster and `Compliant` on another
 - The chart automatically adds namespace and status verification policies for operators
+- Every Policy sets `copyPolicyMetadata: false`, so ACM does not copy Argo CD's tracking labels and annotations onto the replicated Policies, which would otherwise let Argo CD prune them. Replicas keep the `policy.open-cluster-management.io/*` annotations but not `description`
 - For more reading on documentation. Please view the [ACM Policies Documentation](https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/2.13/html/governance/governance#kubernetes-config-policy-controller)
 
 ## Resources Created
