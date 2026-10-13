@@ -2,6 +2,15 @@ apiVersion: v1
 entries:
   policy-library:
   - apiVersion: v2
+    created: "2026-10-13T04:48:38.84828893Z"
+    description: A Helm library chart for Open Cluster Management policies
+    digest: e46f7cde3d3214b3695a1e8ea9164dd052cce10cccc5592c8b0e6f6bac1a9c9b
+    name: policy-library
+    type: library
+    urls:
+    - https://github.com/PolicyStack/PolicyStack-chart/releases/download/policy-library-3.1.0/policy-library-3.1.0.tgz
+    version: 3.1.0
+  - apiVersion: v2
     created: "2026-10-12T20:19:39.184220476Z"
     description: A Helm library chart for Open Cluster Management policies
     digest: 6503ea4ff0a40fdc8772ce084faa2699fc2416992f3fb3e0872cdb0dff368f5b
@@ -64,4 +73,4 @@ entries:
     urls:
     - https://github.com/PolicyStack/PolicyStack-chart/releases/download/policy-library-1.0.0/policy-library-1.0.0.tgz
     version: 1.0.0
-generated: "2026-10-12T20:19:39.184247306Z"
+generated: "2026-10-13T04:48:38.84833689Z"
