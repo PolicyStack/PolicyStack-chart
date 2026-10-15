@@ -25,6 +25,9 @@ helm template policy-stack-test-c1 . -f values-dependencies.yaml -f values-2.1.y
 helm template test . -f values-3.0.yaml
 
 helm lint .
+
+# values.schema.json (3.2.0): must fail on the unknown key enabeld
+helm template test . --set stack.policyStackTest.enabeld=true
 ```
 
 `values.yaml` is deliberately conservative — it is the backwards-compatibility baseline. Capture its

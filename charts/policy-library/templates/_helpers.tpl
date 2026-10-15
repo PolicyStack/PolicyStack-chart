@@ -10,7 +10,8 @@ Resolve whether a single entry (policy / configPolicy / operatorPolicy / certifi
 policySet) is enabled, honouring the component-level "toggles" map.
 
 "toggles" is a map keyed by the entry's own name. When a key is present it overrides that entry's
-"enabled" field. It exists because policies[] and configPolicies[] are lists, and Helm replaces
+"enabled" field; a null value counts as absent, since under alias: stack Helm 3.17+ keeps a layer's
+null instead of deleting the key. It exists because policies[] and configPolicies[] are lists, and Helm replaces
 lists wholesale rather than merging them - so without it, flipping one sub-feature for one cluster
 would mean restating the entire list in that cluster's values file. operatorPolicies is a map and
 merges, so operatorPolicies.<key>.enabled works per layer too; toggles still apply to its keys.
@@ -22,7 +23,7 @@ Args: dict "component" <stack component> "entry" <entry; operatorPolicies caller
 {{- define "policy-library.enabled" -}}
 {{- $toggles := (.component).toggles | default dict -}}
 {{- $entry := .entry -}}
-{{- if and $entry.name (hasKey $toggles $entry.name) -}}
+{{- if and $entry.name (not (kindIs "invalid" (index $toggles $entry.name))) -}}
 {{- if index $toggles $entry.name }}true{{ end -}}
 {{- else -}}
 {{- if $entry.enabled }}true{{ end -}}

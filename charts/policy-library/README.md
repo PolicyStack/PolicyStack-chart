@@ -9,9 +9,20 @@ Add chart as a dependency in a `Chart.yaml`
 ```
 dependencies:
   - name: policy-library
+    alias: stack
     version: "3.x.x"
     repository: "repo"
 ```
+
+`alias: stack` turns on `values.schema.json`. Helm validates a dependency's schema only against the values under its name, so the alias points it at `stack`. Without it, nothing is validated. An unknown key or a wrong type then fails the render:
+
+```
+Error: values don't meet the specifications of the schema(s) in the following chart(s):
+stack:
+- at '/myComponent': additional properties 'enabeld' not allowed
+```
+
+The schema closes every key in the tables below and accepts `null` for any of them. `config`, `templateParameters`, the selectors and `subscription.config` take any keys, and `toggles` takes any name with a boolean value. It does not check the component name or the root chart options. Helm adds a `global` key under `stack`, so don't `range` over `.Values.stack`.
 
 Create a template that calls the policy library `render` function.
 `{{- include "policy-library.render" . -}}`
@@ -38,6 +49,7 @@ All of these will need to be under the `stack.<chartName>` dict. The chart name 
 | `orderPolicies` | When true, each policy in `policies[]` gets an ACM dependency on the previous one, so they are applied in declaration order. See [Policy Dependencies](#policy-dependencies). | No |
 | `orderManifests` | When true, the policy-templates inside each policy get `extraDependencies` chaining them in render order. Overridable per policy. | No |
 | `toggles` | Map keyed by an entry's `name` that overrides that entry's `enabled`. See [Toggles](#toggles). | No |
+| `config` | Element settings read by its own converters. Not validated. | No |
 | `suffixTemplateNames` | When true, every ConfigurationPolicy, OperatorPolicy and CertificatePolicy name gets `-<cluster>` appended, where `<cluster>` is `Release.Name` minus `<chart>-`. Dependencies on template kinds follow. Use it when one release per cluster is placed on the same cluster (e.g. the hub), since ACM requires template names to be unique per cluster. | No |
 
 ### Custom Policy Options
@@ -156,7 +168,7 @@ All of these will need to be under the `stack.<chartName>` dict. The chart name 
 | `certificatePolicies[].labelSelector` | Map of selectors. Used to select which certificates to manage by labels | No |
 | `certificatePolicies[].remediationAction` | Override remediation action | No |
 | `certificatePolicies[].severity` | Override severity level | No |
-| `certificatePolicies[].minimumDuration` | Specifies the smallest duration (in hours) before a certificate is considered non-compliant | No |
+| `certificatePolicies[].minimumDuration` | Smallest remaining validity before a certificate is non-compliant, as a duration string (`720h`) | No |
 | `certificatePolicies[].minimumCADuration` | Like minimumDuration but for CA certificates | No |
 | `certificatePolicies[].maximumDuration` | Value to identify certificates that have been created with a duration that exceeds your limit | No |
 | `certificatePolicies[].maximumCADuration` | Like maximumDuration but for CA certificates | No |

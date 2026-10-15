@@ -1,0 +1,211 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "policy-library",
+  "description": "Validates .Values.stack when the consuming chart sets alias: stack on this dependency. Each key is a component, keyed by the consuming chart's camelCased name.",
+  "type": "object",
+  "properties": {
+    "global": { "type": "object" }
+  },
+  "additionalProperties": { "$ref": "#/definitions/component" },
+  "definitions": {
+    "stringOrList": {
+      "type": ["string", "array", "null"],
+      "items": { "type": ["string", "null"] }
+    },
+    "stringList": {
+      "type": ["array", "null"],
+      "items": { "type": ["string", "null"] }
+    },
+    "dependencies": {
+      "type": ["array", "null"],
+      "items": {
+        "type": ["object", "null"],
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": {
+          "name": { "type": ["string", "null"] },
+          "kind": { "type": ["string", "null"] },
+          "compliance": { "type": ["string", "null"] },
+          "policyRef": { "type": ["string", "null"] },
+          "release": { "type": ["string", "null"] },
+          "element": { "type": ["string", "null"] },
+          "raw": { "type": ["boolean", "null"] },
+          "namespace": { "type": ["string", "null"] },
+          "apiVersion": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "compliantPair": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "compliant": { "type": ["string", "null"] },
+        "noncompliant": { "type": ["string", "null"] }
+      }
+    },
+    "component": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": ["boolean", "null"] },
+        "config": { "type": ["object", "null"], "description": "Element settings read by its own converters; not validated here." },
+        "toggles": {
+          "type": ["object", "null"],
+          "additionalProperties": { "type": ["boolean", "null"] }
+        },
+        "default": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "categories": { "$ref": "#/definitions/stringList" },
+            "controls": { "$ref": "#/definitions/stringList" },
+            "standards": { "$ref": "#/definitions/stringList" }
+          }
+        },
+        "disablePlacements": { "type": ["boolean", "null"] },
+        "usePolicySetsPlacements": { "type": ["boolean", "null"] },
+        "orderPolicies": { "type": ["boolean", "null"] },
+        "orderManifests": { "type": ["boolean", "null"] },
+        "suffixTemplateNames": { "type": ["boolean", "null"] },
+        "policies": { "type": ["array", "null"], "items": { "$ref": "#/definitions/policy" } },
+        "configPolicies": { "type": ["array", "null"], "items": { "$ref": "#/definitions/configPolicy" } },
+        "operatorPolicies": {
+          "type": ["object", "null"],
+          "additionalProperties": { "$ref": "#/definitions/operatorPolicy" }
+        },
+        "certificatePolicies": { "type": ["array", "null"], "items": { "$ref": "#/definitions/certificatePolicy" } },
+        "policySets": { "type": ["array", "null"], "items": { "$ref": "#/definitions/policySet" } }
+      }
+    },
+    "policy": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": ["string", "null"] },
+        "enabled": { "type": ["boolean", "null"] },
+        "namespace": { "type": ["string", "null"] },
+        "description": { "type": ["string", "null"] },
+        "categories": { "$ref": "#/definitions/stringList" },
+        "controls": { "$ref": "#/definitions/stringList" },
+        "standards": { "$ref": "#/definitions/stringList" },
+        "severity": { "type": ["string", "null"] },
+        "remediationAction": { "type": ["string", "null"] },
+        "disabled": { "type": ["boolean", "null"] },
+        "dependencies": { "$ref": "#/definitions/dependencies" },
+        "orderManifests": { "type": ["boolean", "null"] }
+      }
+    },
+    "configPolicy": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": ["string", "null"] },
+        "enabled": { "type": ["boolean", "null"] },
+        "description": { "type": ["string", "null"] },
+        "customMessage": { "$ref": "#/definitions/compliantPair" },
+        "evaluationInterval": { "$ref": "#/definitions/compliantPair" },
+        "namespaceSelector": { "type": ["object", "null"] },
+        "disableTemplating": { "type": ["boolean", "null"] },
+        "policyRef": { "type": ["string", "null"] },
+        "severity": { "type": ["string", "null"] },
+        "remediationAction": { "type": ["string", "null"] },
+        "complianceType": { "type": ["string", "null"] },
+        "pruneObjectBehavior": { "type": ["string", "null"] },
+        "templateNames": {
+          "type": ["array", "null"],
+          "items": {
+            "type": ["object", "string"],
+            "additionalProperties": false,
+            "properties": {
+              "name": { "type": ["string", "null"] },
+              "complianceType": { "type": ["string", "null"] },
+              "metadataComplianceType": { "type": ["string", "null"] },
+              "recordDiff": { "type": ["string", "null"] },
+              "recreateOption": { "type": ["string", "null"] },
+              "objectSelector": { "type": ["object", "null"] }
+            }
+          }
+        },
+        "enableTemplateParameters": { "type": ["boolean", "null"] },
+        "templateParameters": { "type": ["object", "null"] },
+        "extraDependencies": { "$ref": "#/definitions/dependencies" },
+        "waitForOperator": { "$ref": "#/definitions/stringOrList" },
+        "ignorePending": { "type": ["boolean", "null"] },
+        "rawTemplate": { "type": ["boolean", "null"] }
+      }
+    },
+    "operatorPolicy": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": ["boolean", "null"] },
+        "description": { "type": ["string", "null"] },
+        "policyRef": { "type": ["string", "null"] },
+        "severity": { "type": ["string", "null"] },
+        "remediationAction": { "type": ["string", "null"] },
+        "complianceType": { "type": ["string", "null"] },
+        "namespace": { "type": ["string", "null"] },
+        "displayName": { "type": ["string", "null"] },
+        "versions": { "$ref": "#/definitions/stringList" },
+        "operatorGroup": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "name": { "type": ["string", "null"] },
+            "targetNamespaces": { "$ref": "#/definitions/stringList" }
+          }
+        },
+        "subscription": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "name": { "type": ["string", "null"] },
+            "channel": { "type": ["string", "null"] },
+            "source": { "type": ["string", "null"] },
+            "sourceNamespace": { "type": ["string", "null"] },
+            "startingCSV": { "type": ["string", "null"] },
+            "config": { "type": ["object", "null"] }
+          }
+        },
+        "upgradeApproval": { "type": ["string", "null"] },
+        "extraDependencies": { "$ref": "#/definitions/dependencies" },
+        "waitForOperator": { "$ref": "#/definitions/stringOrList" },
+        "ignorePending": { "type": ["boolean", "null"] }
+      }
+    },
+    "certificatePolicy": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": ["string", "null"] },
+        "enabled": { "type": ["boolean", "null"] },
+        "description": { "type": ["string", "null"] },
+        "policyRef": { "type": ["string", "null"] },
+        "namespaceSelector": { "type": ["object", "null"] },
+        "labelSelector": { "type": ["object", "null"] },
+        "remediationAction": { "type": ["string", "null"] },
+        "severity": { "type": ["string", "null"] },
+        "minimumDuration": { "type": ["string", "null"] },
+        "minimumCADuration": { "type": ["string", "null"] },
+        "maximumDuration": { "type": ["string", "null"] },
+        "maximumCADuration": { "type": ["string", "null"] },
+        "allowedSANPattern": { "type": ["string", "null"] },
+        "disallowedSANPattern": { "type": ["string", "null"] },
+        "disableTemplating": { "type": ["boolean", "null"] },
+        "extraDependencies": { "$ref": "#/definitions/dependencies" },
+        "waitForOperator": { "$ref": "#/definitions/stringOrList" },
+        "ignorePending": { "type": ["boolean", "null"] }
+      }
+    },
+    "policySet": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": ["string", "null"] },
+        "enabled": { "type": ["boolean", "null"] },
+        "description": { "type": ["string", "null"] },
+        "policies": { "$ref": "#/definitions/stringList" }
+      }
+    }
+  }
+}
