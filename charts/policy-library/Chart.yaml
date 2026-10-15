@@ -2,4 +2,4 @@ apiVersion: v2
 name: policy-library
 description: A Helm library chart for Open Cluster Management policies
 type: library
-version: 3.1.0
+version: 3.2.0
