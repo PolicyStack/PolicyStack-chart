@@ -68,6 +68,7 @@ All of these will need to be under the `stack.<chartName>` dict. The chart name 
 | `policies[].disabled` | Whether the policy is disabled on the ACM side. | No |
 | `policies[].dependencies` | List of [dependency entries](#policy-dependencies) rendered into `spec.dependencies`. The policy stays `Pending` until they are satisfied. | No |
 | `policies[].orderManifests` | Overrides the component-level `orderManifests` for this policy (set to `false` to opt this policy out). | No |
+| `policies[].hubTemplateOptions.serviceAccountName` | ServiceAccount in the policy namespace that resolves this policy's `{{hub ... hub}}` templates. Without it, hub lookups are limited to the policy namespace. | No |
 
 ### Configuration Policy Options
 All of these will need to be under the `stack.<chartName>` dict. The chart name is taken from the chart of the parent but camelCased.  
