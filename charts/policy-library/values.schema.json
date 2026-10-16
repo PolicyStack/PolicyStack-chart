@@ -92,7 +92,12 @@
         "remediationAction": { "type": ["string", "null"] },
         "disabled": { "type": ["boolean", "null"] },
         "dependencies": { "$ref": "#/definitions/dependencies" },
-        "orderManifests": { "type": ["boolean", "null"] }
+        "orderManifests": { "type": ["boolean", "null"] },
+        "hubTemplateOptions": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": { "serviceAccountName": { "type": ["string", "null"] } }
+        }
       }
     },
     "configPolicy": {

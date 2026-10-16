@@ -81,6 +81,9 @@ spec:
   {{- end }}
   disabled: {{ .disabled }}
   copyPolicyMetadata: false
+  {{- with .hubTemplateOptions }}
+  hubTemplateOptions: {{- toYaml . | nindent 4 }}
+  {{- end }}
   {{- if $policyDeps }}
   dependencies:
     {{- include "policy-library.dependencyList" (dict "deps" $policyDeps "root" $root "component" $component "policyRef" $policyName "defaultKind" "Policy") | nindent 4 }}
