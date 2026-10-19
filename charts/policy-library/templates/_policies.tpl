@@ -76,8 +76,9 @@ metadata:
     description: {{ .description | quote }}
     {{- end }}
 spec:
-  {{- if .remediationAction }}
-  remediationAction: {{ .remediationAction }}
+  {{- /* global.remediationAction (inform only, per the schema) overrides every template, a dry run for any layer */}}
+  {{- with (($root.Values.global).remediationAction | default .remediationAction) }}
+  remediationAction: {{ . }}
   {{- end }}
   disabled: {{ .disabled }}
   copyPolicyMetadata: false
@@ -208,14 +209,19 @@ spec:
   Operator policies render three objects. Under orderManifests they are chained explicitly rather
   than by render position: ns -> OperatorPolicy -> status. Chaining in render position would make
   the OperatorPolicy wait on the CSV status check that only its own installation can satisfy.
+
+  mustnothave uninstalls the operator through the OperatorPolicy's removalBehavior and renders no
+  namespace template: deleting the namespace would remove every other operator sharing it.
   */ -}}
+  {{- $install := ne $complianceType "mustnothave" }}
   {{- $nsRef := dict "name" (printf "%s-ns" $configName) "kind" "ConfigurationPolicy" }}
   {{- $opRef := dict "name" $configName "kind" "OperatorPolicy" }}
   {{- $statusRef := dict "name" (printf "%s-status" $configName) "kind" "ConfigurationPolicy" }}
   {{- $nsDeps := include "policy-library.subPolicyDependencies" (dict "root" $root "component" $component "policyRef" $policyName "subPolicy" dict "prev" (ternary $prevManifest dict $orderManifests)) }}
-  {{- $opDeps := include "policy-library.subPolicyDependencies" (dict "root" $root "component" $component "policyRef" $policyName "subPolicy" . "prev" (ternary $nsRef dict $orderManifests)) }}
+  {{- $opDeps := include "policy-library.subPolicyDependencies" (dict "root" $root "component" $component "policyRef" $policyName "subPolicy" . "prev" (ternary (ternary $nsRef $prevManifest $install) dict $orderManifests)) }}
   {{- $statusDeps := include "policy-library.subPolicyDependencies" (dict "root" $root "component" $component "policyRef" $policyName "subPolicy" dict "prev" (ternary $opRef dict $orderManifests)) }}
   {{- $prevManifest = $statusRef }}
+    {{- if $install }}
     {{- include "policy-library.policyTemplateHeader" (dict "depsYaml" $nsDeps) | nindent 4 }}
         apiVersion: policy.open-cluster-management.io/v1
         kind: ConfigurationPolicy
@@ -231,6 +237,7 @@ spec:
                 kind: Namespace
                 metadata:
                   name: {{ .namespace }}
+    {{- end }}
     {{- include "policy-library.policyTemplateHeader" (dict "depsYaml" $statusDeps) | nindent 4 }}
         apiVersion: policy.open-cluster-management.io/v1
         kind: ConfigurationPolicy
@@ -266,6 +273,9 @@ spec:
           remediationAction: {{ $remediationAction }}
           severity: {{ $severity }}
           complianceType: {{ $complianceType }}
+          {{- with .removalBehavior }}
+          removalBehavior: {{- toYaml . | nindent 12 }}
+          {{- end }}
           {{- /*
           operatorGroup is optional: omitting it means "name defaults to the subscription name,
           install cluster-scoped". Parenthesised access keeps that working - a bare
@@ -285,8 +295,9 @@ spec:
             {{- if .subscription.channel }}
             channel: {{ .subscription.channel }}
             {{- end }}
-            {{- if .subscription.source }}
-            source: {{ .subscription.source }}
+            {{- with .subscription.source }}
+            {{- /* global.catalogSources renames a source fleet-wide, e.g. to a mirrored catalog */}}
+            source: {{ index (($root.Values.global).catalogSources | default dict) . | default . }}
             {{- end }}
             {{- if .subscription.sourceNamespace }}
             sourceNamespace: {{ .subscription.sourceNamespace }}

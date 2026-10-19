@@ -209,6 +209,9 @@ Args: dict "root" <root context> "component" <stack component> "policyRef" <owni
   {{- if not (and (kindIs "map" $op) (eq (include "policy-library.enabled" (dict "component" $component "entry" (set (deepCopy $op) "name" $operator))) "true")) -}}
     {{- fail (printf "policy-library: waitForOperator %q on policy %q matches no enabled entry in operatorPolicies" $operator $policyRef) -}}
   {{- end -}}
+  {{- if eq $op.complianceType "mustnothave" -}}
+    {{- fail (printf "policy-library: waitForOperator %q on policy %q names an operator with complianceType mustnothave, which is being uninstalled" $operator $policyRef) -}}
+  {{- end -}}
   {{- $deps = append $deps (dict "name" (printf "%s-status" (include "policy-library.templateName" (dict "root" $root "component" $component "policyRef" $op.policyRef "name" $operator))) "kind" "ConfigurationPolicy" "raw" true) -}}
 {{- end -}}
 {{- $deps = concat $deps ($sub.extraDependencies | default list) -}}

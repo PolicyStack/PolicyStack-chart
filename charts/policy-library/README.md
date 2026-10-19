@@ -35,6 +35,8 @@ All of these will need to be at the root of the values file.
 | `selector` | Label selector for the generated Placement. More information [here](#placement-overview) | No |
 | `placement` | Extra `Placement.spec` fields (claim/CEL selectors, tolerations, clusterSets, ...). More information [here](#placement-overview) | No |
 | `policyNamespace` | Namespace that these policies will be created in | Yes |
+| `global.remediationAction` | `inform` sets `remediationAction: inform` on every Policy, which overrides every template: a dry run. `enforce` is rejected, since it would also enforce templates that must only inform. | No |
+| `global.catalogSources` | Map of `subscription.source` to the CatalogSource every operator uses instead, e.g. `redhat-operators: cs-redhat-operator-index-v4-20` for an oc-mirror catalog. | No |
 
 ### Root Component Options
 All of these will need to be under the `stack.<chartName>` dict. The chart name is taken from the chart of the parent but camelCased.  
@@ -112,7 +114,7 @@ All of these will need to be under the `stack.<chartName>` dict. The chart name 
 | `operatorPolicies.<key>.policyRef` | Policy to bind this operator to. The render fails without it. | Yes |
 | `operatorPolicies.<key>.severity` | Override severity level | No |
 | `operatorPolicies.<key>.remediationAction` | Override remediation action | No |
-| `operatorPolicies.<key>.complianceType` | Compliance type (musthave, mustnothave, mustonlyhave) | No |
+| `operatorPolicies.<key>.complianceType` | `musthave` (default) or `mustnothave`, which uninstalls the operator. See [Removing an operator](#removing-an-operator). | No |
 | `operatorPolicies.<key>.namespace` | Namespace for operator installation | Yes |
 | `operatorPolicies.<key>.displayName` | Display name for status check | No |
 | `operatorPolicies.<key>.versions` | Exact CSV names allowed to install. See [Version pinning](#version-pinning). | No |
@@ -126,11 +128,16 @@ All of these will need to be under the `stack.<chartName>` dict. The chart name 
 | `operatorPolicies.<key>.subscription.startingCSV` | CSV to install first. Needed when the pinned CSV is not the channel head. | No |
 | `operatorPolicies.<key>.subscription.config.tolerations` | Tolerations for operator | No |
 | `operatorPolicies.<key>.upgradeApproval` | `Automatic` (default) or `None`. `Manual` is not valid; ACM rejects `subscription.installPlanApproval`. | No |
+| `operatorPolicies.<key>.removalBehavior` | `operatorGroups`, `subscriptions`, `clusterServiceVersions`, `customResourceDefinitions`, passed to the OperatorPolicy. Used with `mustnothave`. Unset fields take ACM's defaults: `DeleteIfUnused`, `Delete`, `Delete`, `Keep`. | No |
 | `operatorPolicies.<key>.extraDependencies` | List of [dependency entries](#policy-dependencies) gating the OperatorPolicy object | No |
 | `operatorPolicies.<key>.waitForOperator` | Key (or list of keys) in `operatorPolicies` to wait on before installing this operator | No |
 | `operatorPolicies.<key>.ignorePending` | Treat the OperatorPolicy as compliant while it is waiting on its dependencies | No |
 
 Disable an operator in a layer with `enabled: false` or `toggles.<key>: false`, not `null`. Entries that name it in `waitForOperator` must be disabled in the same layer, or the render fails. Disabling stops managing the operator; it does not uninstall it. A layer key without `policyRef`, such as a typo of an element key, fails the render.
+
+### Removing an operator
+
+`complianceType: mustnothave` uninstalls the operator. The OperatorPolicy deletes what `removalBehavior` says, by default the Subscription, the CSV and the OperatorGroup if nothing else uses it, and keeps CRDs and the namespace. The namespace template is not rendered, so other operators in a shared namespace such as `openshift-operators` are untouched. The `-status` template reports NonCompliant until the CSV is gone. An entry that names it in `waitForOperator` fails the render. Disable the operator's operands first, or OLM removes the operator while its custom resources still exist.
 
 ### Version pinning
 

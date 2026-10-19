@@ -24,6 +24,9 @@ helm template policy-stack-test-c1 . -f values-dependencies.yaml -f values-2.1.y
 # operatorPolicies map (3.0.0): layer pin (versions + startingCSV), default upgradeApproval
 helm template test . -f values-3.0.yaml
 
+# global.remediationAction, global.catalogSources, mustnothave operator removal (3.4.0)
+helm template test . -f values-3.4.yaml
+
 helm lint .
 
 # values.schema.json (3.2.0): must fail on the unknown key enabeld
