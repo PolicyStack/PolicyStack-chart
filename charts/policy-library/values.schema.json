@@ -4,7 +4,21 @@
   "description": "Validates .Values.stack when the consuming chart sets alias: stack on this dependency. Each key is a component, keyed by the consuming chart's camelCased name.",
   "type": "object",
   "properties": {
-    "global": { "type": "object" }
+    "global": {
+      "type": "object",
+      "properties": {
+        "remediationAction": {
+          "type": ["string", "null"],
+          "enum": ["inform", "", null],
+          "description": "Sets remediationAction: inform on every Policy, overriding each template. enforce is not accepted: it would also enforce templates that must only inform."
+        },
+        "catalogSources": {
+          "type": ["object", "null"],
+          "additionalProperties": { "type": ["string", "null"] },
+          "description": "Maps an operatorPolicies subscription.source to the CatalogSource to use instead."
+        }
+      }
+    }
   },
   "additionalProperties": { "$ref": "#/definitions/component" },
   "definitions": {
@@ -173,6 +187,16 @@
           }
         },
         "upgradeApproval": { "type": ["string", "null"] },
+        "removalBehavior": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "operatorGroups": { "type": ["string", "null"] },
+            "subscriptions": { "type": ["string", "null"] },
+            "clusterServiceVersions": { "type": ["string", "null"] },
+            "customResourceDefinitions": { "type": ["string", "null"] }
+          }
+        },
         "extraDependencies": { "$ref": "#/definitions/dependencies" },
         "waitForOperator": { "$ref": "#/definitions/stringOrList" },
         "ignorePending": { "type": ["boolean", "null"] }
