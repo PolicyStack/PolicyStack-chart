@@ -2,4 +2,10 @@ apiVersion: v2
 name: policy-library
 description: A Helm library chart for Open Cluster Management policies
 type: library
-version: 3.4.0
+version: 3.4.1
+home: https://policystk.io/
+sources:
+  - https://github.com/PolicyStack/policystack-chart
+maintainers:
+  - name: PolicyStack maintainers
+    url: https://github.com/orgs/PolicyStack/teams/maintainers
