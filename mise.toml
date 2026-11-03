@@ -1,0 +1,13 @@
+# Tool versions for CI and local runs: `mise install`.
+[tools]
+# The Helm that OpenShift GitOps 1.18 (Argo CD 3.1) renders with.
+helm = "3.18.4"
+# helm-unittest as a standalone binary, so no Helm plugin install is needed: `untt <chart>`.
+"github:helm-unittest/helm-unittest" = { version = "1.2.1", rename_exe = "untt" }
+# Lint entry point: `prek run -a`. Hooks in .pre-commit-config.yaml.
+prek = "0.5.9"
+# The registry's short name is deprecated in favour of a fork; this pins upstream.
+"aqua:rhysd/actionlint" = "1.7.12"
+# actionlint shellchecks run: blocks only when shellcheck is on PATH.
+shellcheck = "0.11.0"
+zizmor = "1.31.1"

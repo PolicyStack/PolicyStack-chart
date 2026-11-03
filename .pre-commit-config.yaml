@@ -1,0 +1,35 @@
+# Run by prek (`prek run -a`), which ci's lint job calls. Builtin hooks need no download; system
+# hooks use the tools in mise.toml.
+repos:
+  - repo: builtin
+    hooks:
+      # Helm templates and element converters are Go templates, not YAML.
+      - id: check-yaml
+        exclude: (^|/)(templates|converters)/
+      # helm-unittest writes snapshots without a final newline.
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+        exclude: /__snapshot__/
+      - id: end-of-file-fixer
+        exclude: /__snapshot__/
+      - id: check-merge-conflict
+      # CI's clean checkout stages nothing, so check every file, not just staged additions.
+      - id: check-added-large-files
+        args: [--enforce-all]
+
+  - repo: local
+    hooks:
+      - id: actionlint
+        name: actionlint
+        language: system
+        entry: actionlint
+        types: [yaml]
+        files: ^\.github/workflows/
+      # Same file selection as zizmor's own pre-commit hook.
+      - id: zizmor
+        name: zizmor
+        language: system
+        entry: zizmor --no-progress
+        types: [yaml]
+        files: (^|/)(\.github/(workflows/[^/]+|dependabot)\.ya?ml|action\.ya?ml|\.pre-commit-(config|hooks)\.ya?ml)$
+        require_serial: true

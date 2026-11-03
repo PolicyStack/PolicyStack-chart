@@ -1,7 +1,7 @@
 # PolicyStack ACM Policy Library Chart
 
-A Helm chart library for creating and managing OpenShift Advanced Cluster Management (ACM) policies. This chart is meant to form that basis of the policy stack and enables you to define both configuration policies and operator policies and associate them with policy resources.
-This library is mainly intended to be used in the PolicyStack GitOps implementation (hence why the configuration is under a `stack.<chartName>` dict)
+A Helm chart library for creating and managing OpenShift Advanced Cluster Management (ACM) policies. This chart is meant to form the basis of the policy stack and enables you to define both configuration policies and operator policies and associate them with policy resources.
+This library is mainly intended to be used in the PolicyStack GitOps implementation (hence the `stack.<chartName>` dict)
 
 ## Usage
 
@@ -180,7 +180,7 @@ All of these will need to be under the `stack.<chartName>` dict. The chart name 
 | `certificatePolicies[].minimumCADuration` | Like minimumDuration but for CA certificates | No |
 | `certificatePolicies[].maximumDuration` | Value to identify certificates that have been created with a duration that exceeds your limit | No |
 | `certificatePolicies[].maximumCADuration` | Like maximumDuration but for CA certificates | No |
-| `certificatePolicies[].allowedSANPattern` | regex taht must match every SAN entry that is defined in the certificates | No |
+| `certificatePolicies[].allowedSANPattern` | regex that must match every SAN entry that is defined in the certificates | No |
 | `certificatePolicies[].disallowedSANPattern` | regex that must *not* match every SAN entry that is defined in the certificates | No |
 | `certificatePolicies[].disableTemplating` | Disable templating inside the policy. This is mainly used for when a manifest has a templating agent inside the manifest | No |
 | `certificatePolicies[].extraDependencies` | List of [dependency entries](#policy-dependencies) gating this CertificatePolicy | No |
@@ -443,7 +443,7 @@ stack:
         enableTemplateParameters: true
         templateParameters:
           name: testcm
-          value1: somethingidk2
+          value1: example
 
     operatorPolicies:
       oadp-operator:
@@ -513,7 +513,7 @@ placement:              #optional, top level. Merged into the Placement spec
 - Dependencies are evaluated on each managed cluster, so a policy can be `Pending` on one cluster and `Compliant` on another
 - The chart automatically adds namespace and status verification policies for operators
 - Every Policy sets `copyPolicyMetadata: false`, so ACM does not copy Argo CD's tracking labels and annotations onto the replicated Policies, which would otherwise let Argo CD prune them. Replicas keep the `policy.open-cluster-management.io/*` annotations but not `description`
-- For more reading on documentation. Please view the [ACM Policies Documentation](https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/2.13/html/governance/governance#kubernetes-config-policy-controller)
+- See the [ACM Policies Documentation](https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/2.13/html/governance/governance#kubernetes-config-policy-controller)
 
 ## Resources Created
 
@@ -522,3 +522,31 @@ For each release, the chart creates:
 - A Placement resource
 - A PlacementBinding resource, when there is at least one enabled Policy/PolicySet to bind
 - ConfigurationPolicy / OperatorPolicy / CertificatePolicy / PolicySet resources as defined
+
+## Public API
+
+Anything below changes only in a major version. Snapshot tests in `tests/` pin the output.
+
+| Surface | Contract |
+|---|---|
+| Defines | Every `policy-library.*` define: name, arguments, behaviour. Consumers call `policy-library.render`; PolicyStack also calls `policy-library.clusterSuffix`. |
+| Values | Every key in `values.schema.json` and the tables above: name, type, meaning. A new key is a minor. |
+| Output | What existing values render: kinds, names, fields. A new key may change output only when it is set. |
+
+## Compatibility / Upgrading
+
+Supported floors match PolicyStack's: ACM 2.16 and Helm 3.18.4 (OpenShift GitOps 1.18, Argo CD 3.1). CI renders every
+PolicyStack element with that Helm before merge. Pin an exact `version` and let Renovate bump it.
+
+| Upgrade to | Change |
+|---|---|
+| 1.1.0 | `components` renamed to `stack` |
+| 2.0.0 | Placement (`cluster.open-cluster-management.io/v1beta1`) replaces PlacementRule |
+| 3.0.0 | `operatorPolicies` is a map: move each entry's `name` to its key |
+| 3.1.0 | Every Policy sets `copyPolicyMetadata: false` |
+| 3.2.0 | With `alias: stack`, `values.schema.json` rejects unknown keys and wrong types |
+
+1.1.0 and 3.2.0 broke consumers in a minor; anything like them now ships as a major.
+
+A bad release is never withdrawn or re-tagged. The fix ships as the next patch, and consumers exclude the bad version in
+Renovate.
