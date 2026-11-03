@@ -1,44 +1,26 @@
-# Test fixtures
+# Tests
 
-`fixtures/policy-stack-test` is a throwaway consuming chart used to render `policy-library` locally.
-Its chart name (`policy-stack-test`) camelCases to the `stack.policyStackTest` key.
-
-```bash
-cd tests/fixtures/policy-stack-test
-
-# Pick up the local library chart (re-run after every change to charts/policy-library)
-helm dependency update .
-
-# Baseline: uses none of the dependency/ordering keys
-helm template test .
-
-# Every dependency / ordering key
-helm template test . -f values-dependencies.yaml
-
-# Every placement key (2.0.0)
-helm template test . -f values-2.0.yaml
-
-# suffixTemplateNames (2.1.0); needs a "<chart>-<cluster>" release name
-helm template policy-stack-test-c1 . -f values-dependencies.yaml -f values-2.1.yaml
-
-# operatorPolicies map (3.0.0): layer pin (versions + startingCSV), default upgradeApproval
-helm template test . -f values-3.0.yaml
-
-# global.remediationAction, global.catalogSources, mustnothave operator removal (3.4.0)
-helm template test . -f values-3.4.yaml
-
-helm lint .
-
-# values.schema.json (3.2.0): must fail on the unknown key enabeld
-helm template test . --set stack.policyStackTest.enabeld=true
-```
-
-`values.yaml` is deliberately conservative — it is the backwards-compatibility baseline. Capture its
-render before a change and diff it afterwards; anything that does not use the new keys should render
-byte-identically:
+`fixtures/policy-stack-test` is a consuming chart that renders `policy-library` through `file://`.
+Its name camelCases to the `stack.policyStackTest` key. The [helm-unittest](https://github.com/helm-unittest/helm-unittest)
+suites are in its `tests/`. After `mise install`, CI runs the same two commands:
 
 ```bash
-git stash && helm dependency update . >/dev/null && helm template test . > /tmp/before.yaml
-git stash pop && helm dependency update . >/dev/null && helm template test . > /tmp/after.yaml
-diff -u /tmp/before.yaml /tmp/after.yaml
+helm dependency update tests/fixtures/policy-stack-test # re-run after every library change
+untt --strict tests/fixtures/policy-stack-test         # add -u to rewrite snapshots
 ```
+
+| Suite | Covers |
+|---|---|
+| `snapshot_test.yaml` | One golden render per `values*.yaml` |
+| `fail_test.yaml` | Schema rejections and every `fail` call in the library |
+| `library_test.yaml` | Template-name suffixes, `copyPolicyMetadata`, mustnothave operators, `hubTemplateOptions`, `policySets` |
+
+> [!IMPORTANT]
+> A snapshot diff is a behaviour change. If output changes for values that do not use a new key,
+> the chart needs a major bump. Review `__snapshot__/` diffs like code and commit them.
+
+`untt` 1.2.1 renders with the Helm 4 engine (v4.3.0), not the hub's Helm 3.18.4, so `fail_test.yaml`
+matches errors with `errorPattern`, never exact text. The `consumers` job renders with the hub's Helm from `mise.toml`.
+
+CI also runs `prek run -a` and `ct lint` (`ct.yaml`: version bump, `Chart.yaml` schema,
+`helm lint --strict`).

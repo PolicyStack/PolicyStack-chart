@@ -1,0 +1,7 @@
+# Everything else must be SHA-pinned (zizmor's default). The PolicyStack reusable workflow is
+# called @main on purpose: the chart always validates against current consumers.
+rules:
+  unpinned-uses:
+    config:
+      policies:
+        "PolicyStack/*": ref-pin

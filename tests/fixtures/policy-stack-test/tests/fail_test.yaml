@@ -1,0 +1,139 @@
+# Values that must not render. Patterns stay loose where values.schema.json rejects the input:
+# the schema validator's wording changes between Helm versions. Two library fail calls (the
+# operatorPolicies list and a nameless dependency) sit behind the schema, so the schema is what
+# these tests reach.
+suite: render failures
+templates:
+  - templates/policies.yaml
+release:
+  name: test
+tests:
+  - it: rejects an unknown component key (schema)
+    set:
+      stack.policyStackTest.enabeld: true
+    asserts:
+      - failedTemplate:
+          errorPattern: "enabeld"
+
+  - it: rejects global.remediationAction enforce (schema)
+    set:
+      global.remediationAction: enforce
+    asserts:
+      - failedTemplate:
+          errorPattern: "remediationAction"
+
+  - it: rejects the pre-3.0 operatorPolicies list
+    set:
+      stack.policyStackTest.operatorPolicies:
+        - name: oadp
+          policyRef: base
+    asserts:
+      - failedTemplate:
+          errorPattern: "operatorPolicies"
+
+  - it: rejects an operator layered in without a policyRef
+    set:
+      stack.policyStackTest.operatorPolicies.typo:
+        enabled: true
+    asserts:
+      - failedTemplate:
+          errorPattern: "operatorPolicies.typo has no policyRef"
+
+  - it: rejects rawTemplate with more than one templateNames entry
+    set:
+      stack.policyStackTest.configPolicies:
+        - name: raw
+          enabled: true
+          policyRef: base
+          rawTemplate: true
+          templateNames:
+            - name: cm
+            - name: cm
+    asserts:
+      - failedTemplate:
+          errorPattern: 'configPolicy "base-raw" sets rawTemplate: true.*\(got 2\)'
+
+  - it: rejects suffixTemplateNames when the release name lacks the chart prefix
+    set:
+      stack.policyStackTest.suffixTemplateNames: true
+    asserts:
+      - failedTemplate:
+          errorPattern: 'suffixTemplateNames requires Release.Name \("test"\) to start with the chart name "policy-stack-test"'
+
+  - it: rejects a dependency without a name
+    set:
+      stack.policyStackTest.policies:
+        - name: base
+          enabled: true
+          dependencies:
+            - kind: Policy
+    asserts:
+      - failedTemplate:
+          errorPattern: "dependencies[./]0.*name|requires a 'name'"
+
+  - it: rejects an unknown dependency kind without apiVersion
+    set:
+      stack.policyStackTest.policies:
+        - name: base
+          enabled: true
+          dependencies:
+            - name: x
+              kind: Widget
+    asserts:
+      - failedTemplate:
+          errorPattern: 'unknown dependency kind "Widget"'
+
+  - it: rejects element dependencies when the release name lacks the chart prefix
+    set:
+      stack.policyStackTest.policies:
+        - name: base
+          enabled: true
+          dependencies:
+            - name: install
+              element: cert-manager
+    asserts:
+      - failedTemplate:
+          errorPattern: 'dependency element:"cert-manager" on policy "base" requires Release.Name'
+
+  - it: rejects element on a template-kind dependency
+    set:
+      stack.policyStackTest.configPolicies:
+        - name: test-cm
+          enabled: true
+          policyRef: base
+          templateNames:
+            - name: cm
+          extraDependencies:
+            - name: x
+              kind: ConfigurationPolicy
+              element: cert-manager
+    asserts:
+      - failedTemplate:
+          errorPattern: "is only valid for kind Policy"
+
+  - it: rejects waitForOperator naming no enabled operator
+    set:
+      stack.policyStackTest.configPolicies:
+        - name: test-cm
+          enabled: true
+          policyRef: base
+          waitForOperator: missing
+          templateNames:
+            - name: cm
+    asserts:
+      - failedTemplate:
+          errorPattern: 'waitForOperator "missing" on policy "base" matches no enabled entry'
+
+  - it: rejects waitForOperator on an operator being uninstalled
+    set:
+      stack.policyStackTest.operatorPolicies.oadp.complianceType: mustnothave
+      stack.policyStackTest.configPolicies:
+        - name: test-cm
+          enabled: true
+          policyRef: base
+          waitForOperator: oadp
+          templateNames:
+            - name: cm
+    asserts:
+      - failedTemplate:
+          errorPattern: 'waitForOperator "oadp" on policy "base" names an operator with complianceType mustnothave'

@@ -1,0 +1,6 @@
+# Categories for the release notes cr generates (CR_GENERATE_RELEASE_NOTES). Tooling bumps are not
+# chart changes.
+changelog:
+  exclude:
+    authors:
+      - renovate[bot]

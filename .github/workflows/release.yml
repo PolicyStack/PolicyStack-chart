@@ -1,38 +1,73 @@
 name: Release Charts
 
+# chart-releaser publishes only a chart whose version has no release yet; ci (ct lint) enforces the
+# bump before merge.
 on:
   push:
     branches:
       - main
+    paths:
+      - 'charts/**'
+
+permissions: {}
+
+# A running release is never cut off, but only the newest pending run survives. A cancelled run's
+# version is never published (cr packages only the current Chart.yaml); re-run it if it must exist.
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Read only: every write (release, gh-pages push) uses the App token.
+    permissions:
+      contents: read
+    # Holds the App key. Its deployment branch policy must be set to main in the repo settings.
+    environment: release
     steps:
+      # The gh-pages ruleset lets only this App push. vars.RELEASE_APP_CLIENT_ID is the App's client
+      # ID (App settings page), not its numeric App ID.
       - name: Generate GitHub App Token
         id: generate_token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
-          app-id: ${{ secrets.APP_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
 
+      # No persisted credentials: chart-releaser pushes gh-pages through a URL built from CR_TOKEN.
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-          token: ${{ steps.generate_token.outputs.token }}
+          persist-credentials: false
 
+      # Commits the index as the App's bot user.
       - name: Configure Git
-        run: |
-          git config user.name "Helm Release Bot[bot]"
-          git config user.email "${{ secrets.APP_ID }}+helm-release-bot[bot]@users.noreply.github.com"
-
-      - name: Install Helm
-        uses: azure/setup-helm@v4
-        with:
-          version: v3.14.0
-
-      - name: Run chart-releaser
-        uses: helm/chart-releaser-action@v1.6.0
         env:
-          CR_TOKEN: "${{ steps.generate_token.outputs.token }}"
+          GH_TOKEN: ${{ steps.generate_token.outputs.token }}
+          APP_SLUG: ${{ steps.generate_token.outputs.app-slug }}
+        run: |
+          user_id=$(gh api "/users/${APP_SLUG}[bot]" --jq .id)
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${user_id}+${APP_SLUG}[bot]@users.noreply.github.com"
+
+      # Helm comes from mise.toml. No cache: this job holds a write token.
+      - name: Install Helm
+        uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
+        with:
+          version: 2026.10.25
+          install_args: helm
+          cache: false
+
+      # skip_existing: a re-run after a partial publish uploads nothing twice.
+      - name: Run chart-releaser
+        uses: helm/chart-releaser-action@92c6b97fa9f664492a2592e0d1d80bc6bf378957 # v1.9.0
+        with:
+          version: v1.10.1
+          skip_existing: true
+        env:
+          CR_TOKEN: ${{ steps.generate_token.outputs.token }}
+          CR_GENERATE_RELEASE_NOTES: true
