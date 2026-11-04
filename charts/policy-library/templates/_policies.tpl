@@ -1,210 +1,180 @@
 {{/*
-Main policy processing template with templateParameters support
+Renders the element's Policies (policy-library.model) with their ConfigurationPolicies and
+OperatorPolicies.
+
+remediationAction and severity resolve entry -> policy -> default -> inform/low. Every template takes
+its Policy's action, which ACM applies anyway, unless it sets InformOnly.
 */}}
 {{- define "policy-library.renderPolicies" -}}
-{{/* Get component name - either passed in or derived from chart name */}}
 {{- $componentName := .component | default (include "policy-library.componentName" .) -}}
 {{- $root := . -}}
-
-{{/* Access the component using the key */}}
 {{- $component := index .Values.stack $componentName -}}
-{{- if $component -}}
-{{- if $component.enabled -}}
+{{- if and $component $component.enabled -}}
+{{- $default := $component.default | default dict -}}
 
 {{- /*
 operatorPolicies is a map keyed by entry name, so layers merge into it. A layer key the element
-does not define merges into an entry with no policyRef, which would otherwise render nothing.
+does not define merges into an entry with no subscription, which would otherwise render nothing.
 */ -}}
-{{- if kindIs "slice" $component.operatorPolicies -}}
-{{- fail "policy-library: operatorPolicies is a map keyed by name since policy-library 3.0.0 - move each entry's name to its key" -}}
-{{- end -}}
 {{- range $opName, $op := $component.operatorPolicies -}}
-{{- if and (kindIs "map" $op) (not $op.policyRef) -}}
-{{- fail (printf "policy-library: operatorPolicies.%s has no policyRef - a values layer may set an operator the element does not define" $opName) -}}
+{{- if and (kindIs "map" $op) (not ($op.subscription).name) -}}
+{{- fail (printf "policy-library: operatorPolicies.%s has no subscription.name - a values layer may set an operator the element does not define" $opName) -}}
 {{- end -}}
 {{- end -}}
 
-{{/* Ordering: chain policies / policy-templates via ACM dependencies */}}
-{{- $orderPolicies := $component.orderPolicies | default false -}}
-{{- $prevPolicy := "" -}}
-
-{{/* Process custom policies */}}
-{{- range $component.policies }}
-{{- if eq (include "policy-library.enabled" (dict "component" $component "entry" .)) "true" }}
-{{- $policyName := .name }}
-{{- $policyNamespace := $root.Values.policyNamespace }}
-{{- $policyValues := . }}
-
-{{/* orderManifests: component-level default, overridable per policy (including back to false) */}}
-{{- $orderManifests := $component.orderManifests | default false }}
-{{- if hasKey . "orderManifests" }}{{- $orderManifests = .orderManifests }}{{- end }}
+{{- range $policy := include "policy-library.model" (dict "root" $root "component" $component) | fromJsonArray }}
+{{- if or $policy.templates $policy.operators }}
+{{- $policyName := $policy.name }}
+{{- $pv := get ($component.policies | default dict) $policyName | default dict }}
+{{- $action := $pv.remediationAction | default $default.remediationAction | default "inform" }}
+{{- $severity := $pv.severity | default $default.severity | default "low" }}
+{{- $orderManifests := not (empty $pv.orderManifests) }}
 {{- $prevManifest := dict }}
-
-{{/* Policy-level dependencies: automatic ordering first, then any explicit entries */}}
-{{- $policyDeps := list }}
-{{- if and $orderPolicies $prevPolicy }}
-{{- $policyDeps = append $policyDeps (dict "name" $prevPolicy "kind" "Policy") }}
-{{- end }}
-{{- $policyDeps = concat $policyDeps (.dependencies | default list) }}
-
-{{/* Check if this policy has any configuration or operator policies */}}
-{{- $hasSubPolicies := include "hasPolicySubPolicies" (dict "policy" . "component" $component "root" $root) }}
-{{- if eq $hasSubPolicies "true" }}
 ---
 apiVersion: policy.open-cluster-management.io/v1
 kind: Policy
 metadata:
   name: {{ $policyName }}-{{ $root.Release.Name }}
-  namespace: {{ $policyNamespace }}
+  namespace: {{ $root.Values.policyNamespace }}
   annotations:
-    {{- if .categories }}
-    policy.open-cluster-management.io/categories: {{ .categories | join "," | quote }}
-    {{- else if and $component.default $component.default.categories }}
-    policy.open-cluster-management.io/categories: {{ $component.default.categories | join "," | quote }}
+    {{- with $pv.categories | default $default.categories }}
+    policy.open-cluster-management.io/categories: {{ join "," . | quote }}
     {{- end }}
-    {{- if .controls }}
-    policy.open-cluster-management.io/controls: {{ .controls | join "," | quote }}
-    {{- else if and $component.default $component.default.controls }}
-    policy.open-cluster-management.io/controls: {{ $component.default.controls | join "," | quote }}
+    {{- with $pv.controls | default $default.controls }}
+    policy.open-cluster-management.io/controls: {{ join "," . | quote }}
     {{- end }}
-    {{- if .standards }}
-    policy.open-cluster-management.io/standards: {{ .standards | join "," | quote }}
-    {{- else if and $component.default $component.default.standards }}
-    policy.open-cluster-management.io/standards: {{ $component.default.standards | join "," | quote }}
+    {{- with $pv.standards | default $default.standards }}
+    policy.open-cluster-management.io/standards: {{ join "," . | quote }}
     {{- end }}
-    {{- if .description }}
-    description: {{ .description | quote }}
+    {{- with $pv.description }}
+    description: {{ . | quote }}
     {{- end }}
 spec:
   {{- /* global.remediationAction (inform only, per the schema) overrides every template, a dry run for any layer */}}
-  {{- with (($root.Values.global).remediationAction | default .remediationAction) }}
-  remediationAction: {{ . }}
-  {{- end }}
-  disabled: {{ .disabled }}
+  remediationAction: {{ ($root.Values.global).remediationAction | default $action }}
+  disabled: {{ $pv.disabled | default false }}
   copyPolicyMetadata: false
-  {{- with .hubTemplateOptions }}
+  {{- with $pv.hubTemplateOptions }}
   hubTemplateOptions: {{- toYaml . | nindent 4 }}
   {{- end }}
-  {{- if $policyDeps }}
+  {{- with $pv.dependencies }}
   dependencies:
-    {{- include "policy-library.dependencyList" (dict "deps" $policyDeps "root" $root "component" $component "policyRef" $policyName "defaultKind" "Policy") | nindent 4 }}
+    {{- include "policy-library.dependencyList" (dict "deps" . "root" $root "component" $component "policyRef" $policyName "defaultKind" "Policy") | nindent 4 }}
   {{- end }}
-  {{- if $orderPolicies }}{{- $prevPolicy = $policyName }}{{- end }}
   policy-templates:
-  {{- range $component.configPolicies -}}
-  {{- if and (eq (include "policy-library.enabled" (dict "component" $component "entry" .)) "true") (eq .policyRef $policyName) -}}
+  {{- range $policy.templates }}
+  {{- $tv := get ($pv.templates | default dict) .name | default dict }}
   {{- $configName := include "policy-library.templateName" (dict "root" $root "component" $component "policyRef" $policyName "name" .name) }}
-  {{- $severity := default "low" .severity }}
-  {{- $complianceType := .complianceType }}
-  {{- $remediationAction := default "inform" .remediationAction }}
-  {{- $templateNames := .templateNames }}
-  {{- $rawTemplate := .rawTemplate | default false }}
-  {{/* Create context with parameters if enableTemplateParameters is true */}}
-  {{- $templateContext := $root }}
-  {{- if .enableTemplateParameters }}
-    {{- if .templateParameters }}
-      {{- $templateContext = merge (dict "Parameters" .templateParameters) $root }}
-    {{- end -}}
-  {{- end -}}
-  {{- $depsYaml := include "policy-library.subPolicyDependencies" (dict "root" $root "component" $component "policyRef" $policyName "subPolicy" . "prev" (ternary $prevManifest dict $orderManifests)) -}}
+  {{- /* Converters read .Config: the element's config merged with the template's own */}}
+  {{- $context := merge (dict "Config" (mergeOverwrite (deepCopy ($component.config | default dict)) (deepCopy ($tv.config | default dict)))) $root }}
+  {{- $contents := list }}
+  {{- range .files }}
+  {{- $path := printf "converters/%s.yaml" . }}
+  {{- $source := $root.Files.Get $path }}
+  {{- if not $source }}
+  {{- fail (printf "policy-library: %s, a file of %s, is missing or empty" $path $configName) }}
+  {{- end }}
+  {{- with tpl $source $context | trim }}{{ $contents = append $contents . }}{{ end }}
+  {{- end }}
+  {{- /*
+  The rendered shape picks the field. A list ("- ...", "[]") or an ACM template ("{{ ... }}") goes to
+  object-templates-raw, which replaces object-templates and so must be the template's only output.
+  Anything else is one object per "---" document. Full-line YAML comments don't count toward the shape,
+  and a document of only comments is dropped. Rendering nothing gives an empty raw list, so the Policy
+  has nothing to enforce instead of failing to parse.
+  */}}
+  {{- $documents := list }}
+  {{- range $contents }}
+  {{- range regexSplit "(?m)^---[ \t]*$" . -1 }}{{ if regexReplaceAll "(?m)^[ \t]*#.*$" . "" | trim }}{{ $documents = append $documents (trim .) }}{{ end }}{{ end }}
+  {{- end }}
+  {{- $raw := "" }}
+  {{- $objects := list }}
+  {{- range $documents }}
+  {{- $bare := regexReplaceAll "(?m)^[ \t]*#.*$" . "" | trim }}
+  {{- if or (hasPrefix "-" $bare) (hasPrefix "[" $bare) (hasPrefix "{{" $bare) }}
+  {{- if gt (len $documents) 1 }}
+  {{- fail (printf "policy-library: %s renders a raw object list next to other documents - a raw list must be the template's only output" $configName) }}
+  {{- end }}
+  {{- $raw = . }}
+  {{- else }}
+  {{- $objects = append $objects . }}
+  {{- end }}
+  {{- end }}
+  {{- if not (or $raw $objects) }}{{ $raw = "[]" }}{{ end }}
+  {{- $depsYaml := include "policy-library.subPolicyDependencies" (dict "root" $root "component" $component "policyRef" $policyName "subPolicy" $tv "prev" (ternary $prevManifest dict $orderManifests)) -}}
   {{- $prevManifest = dict "name" $configName "kind" "ConfigurationPolicy" -}}
+  {{- /* waitForOperator implies ignorePending: stay compliant while the operator installs */}}
+  {{- $ignorePending := ternary (not (empty $tv.waitForOperator)) $tv.ignorePending (kindIs "invalid" $tv.ignorePending) }}
     # Configuration policies - necessary to prevent line issues
-    {{- include "policy-library.policyTemplateHeader" (dict "depsYaml" $depsYaml "ignorePending" .ignorePending) | nindent 4 }}
+    {{- include "policy-library.policyTemplateHeader" (dict "depsYaml" $depsYaml "ignorePending" $ignorePending) | nindent 4 }}
         apiVersion: policy.open-cluster-management.io/v1
         kind: ConfigurationPolicy
         metadata:
           name: {{ $configName }}
-          {{- if or .description .disableTemplating }}
+          {{- if or $tv.description $tv.disableTemplating }}
           annotations:
-            {{- if .description }}
-            description: {{ .description | quote }}
+            {{- with $tv.description }}
+            description: {{ . | quote }}
             {{- end }}
-            {{- if .disableTemplating }}
+            {{- if $tv.disableTemplating }}
             policy.open-cluster-management.io/disable-templates: "true"
             {{- end }}
           {{- end }}
         spec:
-          {{- if .namespaceSelector }}
-          namespaceSelector: {{ nindent 12 (toYaml .namespaceSelector) }}
+          {{- with $tv.namespaceSelector }}
+          namespaceSelector: {{ nindent 12 (toYaml .) }}
           {{- end }}
-          {{- if .customMessage }}
+          {{- with $tv.customMessage }}
           customMessage:
-            {{- if .customMessage.compliant }}
-            compliant: {{ .customMessage.compliant | quote }}
+            {{- with .compliant }}
+            compliant: {{ . | quote }}
             {{- end }}
-            {{- if .customMessage.noncompliant }}
-            noncompliant: {{ .customMessage.noncompliant | quote }}
+            {{- with .noncompliant }}
+            noncompliant: {{ . | quote }}
             {{- end }}
           {{- end }}
-          {{- if .evaluationInterval }}
+          {{- with $tv.evaluationInterval }}
           evaluationInterval:
-            {{- if .evaluationInterval.compliant }}
-            compliant: {{ .evaluationInterval.compliant }}
+            {{- with .compliant }}
+            compliant: {{ . }}
             {{- end }}
-            {{- if .evaluationInterval.noncompliant }}
-            noncompliant: {{ .evaluationInterval.noncompliant }}
+            {{- with .noncompliant }}
+            noncompliant: {{ . }}
             {{- end }}
           {{- end }}
-          {{- if .pruneObjectBehavior }}
-          pruneObjectBehavior: {{ .pruneObjectBehavior }}
+          {{- with $tv.pruneObjectBehavior }}
+          pruneObjectBehavior: {{ . }}
           {{- end }}
-          remediationAction: {{ $remediationAction }}
-          severity: {{ $severity }}
-          {{- if $rawTemplate }}
-          {{- /*
-          object-templates-raw is a single string field that REPLACES object-templates, so it can
-          only ever come from one converter. Use it when the manifest must emit a variable number of
-          objects decided on the managed cluster (an ACM `lookup` + `range`), which object-templates
-          cannot express. The converter keeps its ACM braces escaped Helm-side.
-          */ -}}
-          {{- if ne (len $templateNames) 1 }}
-          {{- fail (printf "policy-library: configPolicy %q sets rawTemplate: true, which maps to the single-valued object-templates-raw field, so it needs exactly one templateNames entry (got %d)" $configName (len $templateNames)) }}
-          {{- end }}
-          {{- $rawEntry := first $templateNames }}
-          {{- $rawName := "" }}
-          {{- if kindIs "string" $rawEntry }}{{- $rawName = $rawEntry }}{{- else }}{{- $rawName = $rawEntry.name }}{{- end }}
-          {{- $rawContent := tpl ($root.Files.Get (printf "converters/%s.yaml" $rawName)) $templateContext | trim }}
-          {{- /*
-          A raw converter driven by a values map renders to nothing when that map is empty. An empty
-          object-templates-raw is not parseable, so emit an explicit empty list instead - the policy
-          then simply has no objects to enforce rather than failing.
-          */ -}}
-          {{- if not $rawContent }}{{- $rawContent = "[]" }}{{- end }}
-          object-templates-raw: |{{- $rawContent | nindent 12 }}
+          remediationAction: {{ ternary "InformOnly" $action (eq (toString $tv.remediationAction) "InformOnly") }}
+          severity: {{ $tv.severity | default $severity }}
+          {{- if $raw }}
+          object-templates-raw: |{{- $raw | nindent 12 }}
           {{- else }}
           object-templates:
-          {{- range $templateNames -}}
-          {{- $templatePath := printf "converters/%s.yaml" .name }}
-          {{- $templateContent := tpl ($root.Files.Get $templatePath) $templateContext }}
-              {{- if $complianceType }}
-            - complianceType: {{ $complianceType }}
-              {{- else }}
-            - complianceType: {{ default "musthave" .complianceType }}
+          {{- range $objects }}
+            - complianceType: {{ $tv.complianceType | default "musthave" }}
+              {{- with $tv.metadataComplianceType }}
+              metadataComplianceType: {{ . }}
               {{- end }}
-              {{- if .metadataComplianceType }}
-              metadataComplianceType: {{ .metadataComplianceType }}
+              {{- with $tv.recordDiff }}
+              recordDiff: {{ . }}
               {{- end }}
-              {{- if .recordDiff }}
-              recordDiff: {{ .recordDiff }}
+              {{- with $tv.recreateOption }}
+              recreateOption: {{ . }}
               {{- end }}
-              {{- if .recreateOption }}
-              recreateOption: {{ .recreateOption }}
+              {{- with $tv.objectSelector }}
+              objectSelector: {{ nindent 16 (toYaml .) }}
               {{- end }}
-              {{- if .objectSelector }}
-              objectSelector: {{ nindent 16 (toYaml .objectSelector)}}
-              {{- end }}
-              objectDefinition:{{- nindent 16 ( trim $templateContent) }}
+              objectDefinition:{{- nindent 16 . }}
           {{- end }}
           {{- end }}
-  {{- end -}}{{- end -}}
-  {{- range $opName, $op := $component.operatorPolicies -}}
-  {{- if kindIs "map" $op }}
-  {{- with set (deepCopy $op) "name" $opName }}
-  {{- if and (eq (include "policy-library.enabled" (dict "component" $component "entry" .)) "true") (eq .policyRef $policyName) }}
+  {{- end }}
+  {{- range $opName := $policy.operators }}
+  {{- with set (deepCopy (index $component.operatorPolicies $opName)) "name" $opName }}
   {{- $configName := include "policy-library.templateName" (dict "root" $root "component" $component "policyRef" $policyName "name" .name) }}
-  {{- $severity := default $policyValues.severity .severity }}
-  {{- $complianceType := default "musthave" .complianceType }}
-  {{- $remediationAction := default $policyValues.remediationAction .remediationAction }}
+  {{- $opSeverity := .severity | default $severity }}
+  {{- $complianceType := .complianceType | default "musthave" }}
+  {{- $ignorePending := ternary (not (empty .waitForOperator)) .ignorePending (kindIs "invalid" .ignorePending) }}
   {{- /*
   Operator policies render three objects. Under orderManifests they are chained explicitly rather
   than by render position: ns -> OperatorPolicy -> status. Chaining in render position would make
@@ -228,8 +198,8 @@ spec:
         metadata:
           name: {{ $configName }}-ns
         spec:
-          remediationAction: {{ $remediationAction }}
-          severity: {{ $severity }}
+          remediationAction: {{ $action }}
+          severity: {{ $opSeverity }}
           object-templates:
             - complianceType: {{ $complianceType }}
               objectDefinition:
@@ -237,6 +207,10 @@ spec:
                 kind: Namespace
                 metadata:
                   name: {{ .namespace }}
+                  {{- if .clusterMonitoring }}
+                  labels:
+                    openshift.io/cluster-monitoring: "true"
+                  {{- end }}
     {{- end }}
     {{- include "policy-library.policyTemplateHeader" (dict "depsYaml" $statusDeps) | nindent 4 }}
         apiVersion: policy.open-cluster-management.io/v1
@@ -245,7 +219,7 @@ spec:
           name: {{ $configName }}-status
         spec:
           remediationAction: inform
-          severity: {{ $severity }}
+          severity: {{ $opSeverity }}
           object-templates:
             - complianceType: {{ $complianceType }}
               objectDefinition:
@@ -257,21 +231,21 @@ spec:
                   displayName: {{ .displayName | default .subscription.name }}
                 status:
                   phase: Succeeded
-    {{- include "policy-library.policyTemplateHeader" (dict "depsYaml" $opDeps "ignorePending" .ignorePending) | nindent 4 }}
+    {{- include "policy-library.policyTemplateHeader" (dict "depsYaml" $opDeps "ignorePending" $ignorePending) | nindent 4 }}
         apiVersion: policy.open-cluster-management.io/v1beta1
         kind: OperatorPolicy
         metadata:
           name: {{ $configName }}
-          {{- if .description }}
+          {{- with .description }}
           annotations:
-            description: {{ .description | quote }}
+            description: {{ . | quote }}
           {{- end }}
         spec:
-          {{- if .versions }}
-          versions: {{ nindent 12 (toYaml .versions) }}
+          {{- with .versions }}
+          versions: {{ nindent 12 (toYaml .) }}
           {{- end }}
-          remediationAction: {{ $remediationAction }}
-          severity: {{ $severity }}
+          remediationAction: {{ $action }}
+          severity: {{ $opSeverity }}
           complianceType: {{ $complianceType }}
           {{- with .removalBehavior }}
           removalBehavior: {{- toYaml . | nindent 12 }}
@@ -289,79 +263,25 @@ spec:
             {{- end }}
           subscription:
             name: {{ .subscription.name }}
-            {{- if .namespace }}
-            namespace: {{ .namespace }}
+            {{- with .namespace }}
+            namespace: {{ . }}
             {{- end }}
-            {{- if .subscription.channel }}
-            channel: {{ .subscription.channel }}
+            {{- with .subscription.channel }}
+            channel: {{ . }}
             {{- end }}
-            {{- with .subscription.source }}
             {{- /* global.catalogSources renames a source fleet-wide, e.g. to a mirrored catalog */}}
-            source: {{ index (($root.Values.global).catalogSources | default dict) . | default . }}
+            {{- $source := .subscription.source | default "redhat-operators" }}
+            source: {{ index (($root.Values.global).catalogSources | default dict) $source | default $source }}
+            sourceNamespace: {{ .subscription.sourceNamespace | default "openshift-marketplace" }}
+            {{- with .subscription.startingCSV }}
+            startingCSV: {{ . }}
             {{- end }}
-            {{- if .subscription.sourceNamespace }}
-            sourceNamespace: {{ .subscription.sourceNamespace }}
-            {{- end }}
-            {{- if .subscription.startingCSV }}
-            startingCSV: {{ .subscription.startingCSV }}
-            {{- end }}
-            {{- if .subscription.config }}
-            config: {{ nindent 14 (toYaml .subscription.config) }}
+            {{- with .subscription.config }}
+            config: {{ nindent 14 (toYaml .) }}
             {{- end }}
           upgradeApproval: {{ .upgradeApproval | default "Automatic" }}
-  {{- end -}}{{- end -}}{{- end -}}{{- end -}}
-  {{- range $component.certificatePolicies -}}
-  {{- if and (eq (include "policy-library.enabled" (dict "component" $component "entry" .)) "true") (eq .policyRef $policyName) }}
-  {{- $configName := include "policy-library.templateName" (dict "root" $root "component" $component "policyRef" $policyName "name" .name) }}
-  {{- $severity := default "low" .severity }}
-  {{- $remediationAction := default "inform" .remediationAction }}
-  {{- $depsYaml := include "policy-library.subPolicyDependencies" (dict "root" $root "component" $component "policyRef" $policyName "subPolicy" . "prev" (ternary $prevManifest dict $orderManifests)) }}
-  {{- $prevManifest = dict "name" $configName "kind" "CertificatePolicy" }}
-    {{- include "policy-library.policyTemplateHeader" (dict "depsYaml" $depsYaml "ignorePending" .ignorePending) | nindent 4 }}
-        apiVersion: policy.open-cluster-management.io/v1
-        kind: CertificatePolicy
-        metadata:
-          name: {{ $configName }}
-          {{- if or .description .disableTemplating }}
-          annotations:
-            {{- if .description }}
-            description: {{ .description | quote }}
-            {{- end }}
-            {{- if .disableTemplating }}
-            policy.open-cluster-management.io/disable-templates: "true"
-            {{- end }}
-          {{- end }}
-        spec:
-          {{- if .namespaceSelector }}
-          namespaceSelector: {{ nindent 12 (toYaml .namespaceSelector) }}
-          {{- end }}
-          {{- if .labelSelector }}
-          labelSelector: {{ nindent 12 (toYaml .labelSelector) }}
-          {{- end }}
-          remediationAction: {{ $remediationAction }}
-          severity: {{ $severity }}
-          {{- if .minimumDuration }}
-          minimumDuration: {{ .minimumDuration }}
-          {{- end }}
-          {{- if .minimumCADuration }}
-          minimumCADuration: {{ .minimumCADuration }}
-          {{- end }}
-          {{- if .maximumDuration }}
-          maximumDuration: {{ .maximumDuration }}
-          {{- end }}
-          {{- if .maximumCADuration }}
-          maximumCADuration: {{ .maximumCADuration }}
-          {{- end }}
-          {{- if .allowedSANPattern }}
-          allowedSANPattern: {{ .allowedSANPattern | quote }}
-          {{- end }}
-          {{- if .disallowedSANPattern }}
-          disallowedSANPattern: {{ .disallowedSANPattern | quote }}
-          {{- end }}
-  {{- end -}}
-  {{- end -}}
-{{- end }}
-{{- end }}
+  {{- end }}
+  {{- end }}
 {{- end }}
 {{- end }}
 {{- end }}

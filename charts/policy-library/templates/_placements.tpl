@@ -42,13 +42,13 @@ spec:
 {{- $subjects := list }}
 {{- if $usePolicySetsPlacements }}
 {{- range $component.policySets }}
-{{- if and (eq (include "policy-library.enabled" (dict "component" $component "entry" .)) "true") .policies }}
+{{- if and (include "policy-library.enabled" .) .policies }}
 {{- $subjects = append $subjects (dict "name" (printf "%s-%s" .name $root.Release.Name) "kind" "PolicySet" "apiGroup" "policy.open-cluster-management.io") }}
 {{- end }}
 {{- end }}
 {{- else }}
-{{- range $component.policies }}
-{{- if and (eq (include "policy-library.enabled" (dict "component" $component "entry" .)) "true") (eq (include "hasPolicySubPolicies" (dict "policy" . "component" $component "root" $root)) "true") }}
+{{- range include "policy-library.model" (dict "root" $root "component" $component) | fromJsonArray }}
+{{- if or .templates .operators }}
 {{- $subjects = append $subjects (dict "name" (printf "%s-%s" .name $root.Release.Name) "kind" "Policy" "apiGroup" "policy.open-cluster-management.io") }}
 {{- end }}
 {{- end }}

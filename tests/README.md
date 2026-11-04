@@ -12,8 +12,12 @@ untt --strict tests/fixtures/policy-stack-test         # add -u to rewrite snaps
 | Suite | Covers |
 |---|---|
 | `snapshot_test.yaml` | One golden render per `values*.yaml` |
-| `fail_test.yaml` | Schema rejections and every `fail` call in the library |
+| `contract_test.yaml` | The 4.0 element contract: discovery, `enabled`, defaults chain, `.Config`, shape detection, `orderManifests`, operator defaults |
+| `fail_test.yaml` | Schema rejections, removed keys, and every `fail` call in the library |
 | `library_test.yaml` | Template-name suffixes, `copyPolicyMetadata`, mustnothave operators, `hubTemplateOptions`, `policySets` |
+
+`converters/base` and `converters/certs` are discovered in every case. `converters/_cases` is a partial
+directory: tests reach its files only through `templates.<t>.file`.
 
 > [!IMPORTANT]
 > A snapshot diff is a behaviour change. If output changes for values that do not use a new key,
