@@ -6,58 +6,93 @@ Helper function to convert chart name to camelCase
 {{- end -}}
 
 {{/*
-Resolve whether a single entry (policy / configPolicy / operatorPolicy / certificatePolicy /
-policySet) is enabled, honouring the component-level "toggles" map.
-
-"toggles" is a map keyed by the entry's own name. When a key is present it overrides that entry's
-"enabled" field; a null value counts as absent, since under alias: stack Helm 3.17+ keeps a layer's
-null instead of deleting the key. It exists because policies[] and configPolicies[] are lists, and Helm replaces
-lists wholesale rather than merging them - so without it, flipping one sub-feature for one cluster
-would mean restating the entire list in that cluster's values file. operatorPolicies is a map and
-merges, so operatorPolicies.<key>.enabled works per layer too; toggles still apply to its keys.
+Whether an entry (policy, template, operator, policySet) renders. Every entry is on unless it sets
+enabled: false. A null counts as absent, since under alias: stack Helm 3.17+ keeps a layer's null
+instead of deleting the key.
 
 Returns the string "true" when enabled, otherwise the empty string.
 
-Args: dict "component" <stack component> "entry" <entry; operatorPolicies callers inject the key as name>
+Args: the entry
 */}}
 {{- define "policy-library.enabled" -}}
-{{- $toggles := (.component).toggles | default dict -}}
-{{- $entry := .entry -}}
-{{- if and $entry.name (not (kindIs "invalid" (index $toggles $entry.name))) -}}
-{{- if index $toggles $entry.name }}true{{ end -}}
-{{- else -}}
-{{- if $entry.enabled }}true{{ end -}}
-{{- end -}}
+{{- if ne (toString (. | default dict).enabled) "false" }}true{{ end -}}
 {{- end -}}
 
 {{/*
-Helper function to check if a policy has any enabled configPolicies or operatorPolicies
+The element's Policies and their templates, as JSON: [{name, templates: [{name, files}], operators}].
+
+converters/<policy>/<template>.yaml is template <template> of Policy <policy>; a directory or file
+whose name starts with _ is a partial and never discovered. policies.<p>.templates.<t> sets options on
+a template, and its file (a path under converters/ without .yaml, or a list of them) replaces the
+discovered one. Operators always render into the install Policy. Templates render in name order;
+policies.<p>.orderManifests lists the ones that come first, in that order, and a non-empty list makes
+every template and operator of the Policy wait for the one rendered before it. Operators come last, so
+an ordered install template that waits on one fails.
+
+A policy or template no file backs fails, which catches a values layer key that names nothing.
+Disabled entries are dropped.
+
+Args: dict "root" <root context> "component" <stack component>
 */}}
-{{- define "hasPolicySubPolicies" -}}
-{{- $policy := .policy -}}
-{{- $component := .component -}}
+{{- define "policy-library.model" -}}
 {{- $root := .root -}}
-{{- $found := false -}}
-{{- range $component.configPolicies -}}
-  {{- if and (eq (include "policy-library.enabled" (dict "component" $component "entry" .)) "true") (eq .policyRef $policy.name) -}}
-    {{- $found = true -}}
-  {{- end -}}
+{{- $declared := .component.policies | default dict -}}
+{{- $found := dict -}}
+{{- range $path, $_ := $root.Files.Glob "converters/*/*.yaml" -}}
+{{- $p := base (dir $path) -}}
+{{- $t := base $path | trimSuffix ".yaml" -}}
+{{- if not (or (hasPrefix "_" $p) (hasPrefix "_" $t)) -}}
+{{- $_ := set $found $p (set (get $found $p | default dict) $t (list (printf "%s/%s" $p $t))) -}}
 {{- end -}}
-{{- range $opName, $op := $component.operatorPolicies -}}
-  {{- if kindIs "map" $op -}}
-  {{- with set (deepCopy $op) "name" $opName -}}
-  {{- if and (eq (include "policy-library.enabled" (dict "component" $component "entry" .)) "true") (eq .policyRef $policy.name) -}}
-    {{- $found = true -}}
-  {{- end -}}
-  {{- end -}}
-  {{- end -}}
 {{- end -}}
-{{- range $component.certificatePolicies -}}
-  {{- if and (eq (include "policy-library.enabled" (dict "component" $component "entry" .)) "true") (eq .policyRef $policy.name) -}}
-    {{- $found = true -}}
-  {{- end -}}
+{{- $allOperators := keys (.component.operatorPolicies | default dict) -}}
+{{- $operators := list -}}
+{{- range $name, $op := .component.operatorPolicies | default dict -}}
+{{- if and (kindIs "map" $op) (include "policy-library.enabled" $op) }}{{ $operators = append $operators $name }}{{ end -}}
 {{- end -}}
-{{- $found -}}
+{{- $names := concat (keys $found) (keys $declared) -}}
+{{- if $allOperators }}{{ $names = append $names "install" }}{{ end -}}
+{{- $out := list -}}
+{{- range $p := sortAlpha (uniq $names) -}}
+{{- $pv := get $declared $p | default dict -}}
+{{- $tdecl := $pv.templates | default dict -}}
+{{- $tfound := get $found $p | default dict -}}
+{{- $tnames := sortAlpha (uniq (concat (keys $tfound) (keys $tdecl))) -}}
+{{- $isInstall := and (eq $p "install") (not (empty $allOperators)) -}}
+{{- if not (or $tnames $isInstall) -}}
+{{- fail (printf "policy-library: policies.%s has no templates - add converters/%s/<template>.yaml" $p $p) -}}
+{{- end -}}
+{{- $order := $pv.orderManifests | default list -}}
+{{- $rest := list -}}
+{{- range $i, $t := $order -}}
+{{- if not (has $t $tnames) -}}
+{{- fail (printf "policy-library: policies.%s.orderManifests names %q, which is not a template of the policy" $p $t) -}}
+{{- end -}}
+{{- if has $t (slice $order 0 $i) -}}
+{{- fail (printf "policy-library: policies.%s.orderManifests lists %q twice" $p $t) -}}
+{{- end -}}
+{{- end -}}
+{{- range $tnames }}{{ if not (has . $order) }}{{ $rest = append $rest . }}{{ end }}{{ end -}}
+{{- $templates := list -}}
+{{- range $t := concat $order $rest -}}
+{{- $tv := get $tdecl $t | default dict -}}
+{{- $files := get $tfound $t | default list -}}
+{{- with $tv.file }}{{ $files = ternary (list .) . (kindIs "string" .) }}{{ end -}}
+{{- if not $files -}}
+{{- fail (printf "policy-library: policies.%s.templates.%s has no file - add converters/%s/%s.yaml or set file" $p $t $p $t) -}}
+{{- end -}}
+{{- if include "policy-library.enabled" $tv -}}
+{{- if and $isInstall $order $tv.waitForOperator -}}
+{{- fail (printf "policy-library: policies.install.orderManifests chains operators after templates, so template %q can't wait on an operator - move the ordered templates to another policy" $t) -}}
+{{- end -}}
+{{- $templates = append $templates (dict "name" $t "files" $files) -}}
+{{- end -}}
+{{- end -}}
+{{- if include "policy-library.enabled" $pv -}}
+{{- $out = append $out (dict "name" $p "templates" $templates "operators" (ternary $operators list $isInstall)) -}}
+{{- end -}}
+{{- end -}}
+{{- toJson $out -}}
 {{- end -}}
 
 {{/*
@@ -76,7 +111,7 @@ Returns the empty string when Release.Name does not start with "<chart>-".
 {{- end -}}
 
 {{/*
-Name of a policy-template object (ConfigurationPolicy, OperatorPolicy, CertificatePolicy):
+Name of a policy-template object (ConfigurationPolicy, OperatorPolicy):
 "<policyRef>-<name>", plus "-<cluster>" when the component sets suffixTemplateNames.
 
 ACM requires template names to be unique across every Policy placed on a cluster. Elements render
@@ -115,9 +150,9 @@ sub-policies by the names they were declared with:
                            "-<cluster>" is appended under suffixTemplateNames)
   - raw: true           -> name is used verbatim
 Precedence for kind Policy: raw > release > element > .Release.Name.
-Namespace is only emitted for kind Policy. Template kinds (ConfigurationPolicy, OperatorPolicy,
-CertificatePolicy) live in the per-cluster namespace on the managed cluster, so ACM resolves that
-itself and the field must be left off.
+Namespace is only emitted for kind Policy. Template kinds (ConfigurationPolicy, OperatorPolicy) live
+in the per-cluster namespace on the managed cluster, so ACM resolves that itself and the field must be
+left off.
 
 Args: dict "deps" <list> "root" <root context> "component" <stack component>
            "policyRef" <owning policy name> "defaultKind" <kind>
@@ -137,7 +172,7 @@ Args: dict "deps" <list> "root" <root context> "component" <stack component>
   {{- if not $apiVersion -}}
     {{- if eq $kind "OperatorPolicy" -}}
       {{- $apiVersion = "policy.open-cluster-management.io/v1beta1" -}}
-    {{- else if has $kind (list "Policy" "ConfigurationPolicy" "CertificatePolicy") -}}
+    {{- else if has $kind (list "Policy" "ConfigurationPolicy") -}}
       {{- $apiVersion = "policy.open-cluster-management.io/v1" -}}
     {{- else -}}
       {{- fail (printf "policy-library: unknown dependency kind %q on %q (policy %q) - set apiVersion explicitly" $kind .name $policyRef) -}}
@@ -180,15 +215,15 @@ Args: dict "deps" <list> "root" <root context> "component" <stack component>
 
 {{/*
 Build the complete extraDependencies YAML for a single policy-template entry.
-Combines, in order: the automatic ordering dependency (if any), waitForOperator shorthand, and the
-sub-policy's own extraDependencies. ACM ANDs all entries, so concatenation is well defined.
+Combines, in order: the orderManifests dependency (if any), waitForOperator shorthand, and the
+template's own extraDependencies. ACM ANDs all entries, so concatenation is well defined.
 Returns an empty string when there is nothing to emit.
 
-waitForOperator names a key in operatorPolicies; the owning policy is that entry's policyRef, so an
-operator installed under a different policy still resolves correctly.
+waitForOperator names a key in operatorPolicies, which always render into the install Policy; a
+disabled install Policy fails.
 
 Args: dict "root" <root context> "component" <stack component> "policyRef" <owning policy name>
-           "subPolicy" <config/operator/certificate policy entry, or an empty dict>
+           "subPolicy" <template or operator entry, or an empty dict>
            "prev" <dict with name+kind to chain from, or an empty dict>
 */}}
 {{- define "policy-library.subPolicyDependencies" -}}
@@ -206,13 +241,16 @@ Args: dict "root" <root context> "component" <stack component> "policyRef" <owni
 {{- end -}}
 {{- range $operator := $waitFor -}}
   {{- $op := index ($component.operatorPolicies | default dict) $operator -}}
-  {{- if not (and (kindIs "map" $op) (eq (include "policy-library.enabled" (dict "component" $component "entry" (set (deepCopy $op) "name" $operator))) "true")) -}}
+  {{- if not (and (kindIs "map" $op) (include "policy-library.enabled" $op)) -}}
     {{- fail (printf "policy-library: waitForOperator %q on policy %q matches no enabled entry in operatorPolicies" $operator $policyRef) -}}
+  {{- end -}}
+  {{- if not (include "policy-library.enabled" (get ($component.policies | default dict) "install")) -}}
+    {{- fail (printf "policy-library: waitForOperator %q on policy %q needs policies.install, which is disabled" $operator $policyRef) -}}
   {{- end -}}
   {{- if eq $op.complianceType "mustnothave" -}}
     {{- fail (printf "policy-library: waitForOperator %q on policy %q names an operator with complianceType mustnothave, which is being uninstalled" $operator $policyRef) -}}
   {{- end -}}
-  {{- $deps = append $deps (dict "name" (printf "%s-status" (include "policy-library.templateName" (dict "root" $root "component" $component "policyRef" $op.policyRef "name" $operator))) "kind" "ConfigurationPolicy" "raw" true) -}}
+  {{- $deps = append $deps (dict "name" (printf "%s-status" (include "policy-library.templateName" (dict "root" $root "component" $component "policyRef" "install" "name" $operator))) "kind" "ConfigurationPolicy" "raw" true) -}}
 {{- end -}}
 {{- $deps = concat $deps ($sub.extraDependencies | default list) -}}
 {{- if $deps -}}
@@ -223,7 +261,7 @@ Args: dict "root" <root context> "component" <stack component> "policyRef" <owni
 {{/*
 Emit the leading keys of a policy-templates[] list item, up to and including "objectDefinition:".
 Collapses to the plain "- objectDefinition:" when the entry has neither dependencies nor
-ignorePending, so values files that do not use these keys render exactly as before.
+ignorePending.
 
 Args: dict "depsYaml" <output of policy-library.subPolicyDependencies> "ignorePending" <bool>
 */}}

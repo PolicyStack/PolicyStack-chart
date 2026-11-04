@@ -1,6 +1,7 @@
 # Exercises chart 3.4.0. Layered over values.yaml.
-# global.remediationAction sets inform on every Policy, global.catalogSources remaps
-# redhat-operators, and oadp is uninstalled: no -ns template, removalBehavior passed through.
+# global.remediationAction sets inform on every Policy, global.catalogSources remaps the default
+# redhat-operators source, and oadp is uninstalled: no -ns template, removalBehavior passed through.
+# install chains prereq -> OperatorPolicy -> status.
 global:
   remediationAction: inform
   catalogSources:
@@ -8,7 +9,13 @@ global:
 
 stack:
   policyStackTest:
-    orderManifests: true
+    policies:
+      install:
+        orderManifests:
+          - prereq
+        templates:
+          prereq:
+            file: base/test-cm
     operatorPolicies:
       oadp:
         complianceType: mustnothave

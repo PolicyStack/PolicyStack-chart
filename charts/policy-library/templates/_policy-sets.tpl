@@ -1,5 +1,5 @@
 {{/*
-Main policy processing template with templateParameters support
+PolicySets grouping the element's Policies by name
 */}}
 {{- define "policy-library.renderPolicySets" -}}
 {{/* Get component name - either passed in or derived from chart name */}}
@@ -13,7 +13,7 @@ Main policy processing template with templateParameters support
 
 {{/* Process custom policies */}}
 {{- range $component.policySets }}
-{{- if and (eq (include "policy-library.enabled" (dict "component" $component "entry" .)) "true") .policies }}
+{{- if and (include "policy-library.enabled" .) .policies }}
 {{- $policySetName := .name }}
 {{- $policyNamespace := $root.Values.policyNamespace }}
 {{- $policyValues := . }}

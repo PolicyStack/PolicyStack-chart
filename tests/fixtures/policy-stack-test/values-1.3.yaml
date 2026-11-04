@@ -1,36 +1,11 @@
-# Exercises every key added in chart 1.3.0: element:, toggles:, rawTemplate:.
-policyNamespace: open-cluster-management
-
-selector:
-  matchExpressions:
-    environment:
-      key: environment
-      operator: In
-      values:
-        - dev
-
+# Exercises element: dependencies (1.3.0) and a raw object list (rawTemplate before 4.0).
+# Render with a "<chart>-<cluster>" release name, e.g. policy-stack-test-c1.
 stack:
   policyStackTest:
-    enabled: true
-
-    # toggles override enabled by entry name. A map, so a cluster values file can flip one
-    # policies[] / configPolicies[] entry without restating the whole list.
-    toggles:
-      opt-in: true        # declared enabled: false below -> forced ON
-      opt-out: false      # declared enabled: true  below -> forced OFF
-      never-rendered: false
-
     policies:
-      - name: install
-        enabled: true
-        disabled: false
-        remediationAction: enforce
-
-      # Cross-element dependencies: resolve to "<name>-<element>-<cluster>", where <cluster> is
+      # Cross-element dependencies resolve to "<name>-<element>-<cluster>", where <cluster> is
       # taken from THIS release's own suffix, so one line is correct on every cluster.
-      - name: consume
-        enabled: true
-        disabled: false
+      consume:
         remediationAction: enforce
         dependencies:
           - name: install
@@ -44,82 +19,23 @@ stack:
             release: other-element-somecluster
           # same-element dependency keeps the old behaviour
           - name: install
+        templates:
+          cm:
+            file: base/test-cm
+            config:
+              name: consume-cm
+              value1: consume
 
-      # enabled: false, but toggles.opt-in forces it on
-      - name: opt-in
-        enabled: false
-        disabled: false
-        remediationAction: inform
-
-      # enabled: true, but toggles.opt-out forces it off -> no Policy, no binding subject
-      - name: opt-out
-        enabled: true
-        disabled: false
-        remediationAction: inform
-
-    operatorPolicies:
-      # Maps merge, so values.yaml's oadp.description would carry over; clear it.
-      oadp:
-        enabled: true
-        description: ""
-        policyRef: install
-        displayName: "OADP Operator"
-        namespace: openshift-adp
-        complianceType: musthave
-        operatorGroup:
-          name: openshift-adp-group
-          targetNamespaces:
-            - openshift-adp
-        subscription:
-          channel: stable
-          name: redhat-oadp-operator
-          source: redhat-operators
-          sourceNamespace: openshift-marketplace
-        upgradeApproval: Automatic
-
-    configPolicies:
-      - name: cm
-        enabled: true
-        policyRef: consume
+      # One ConfigurationPolicy whose object count comes from a values map
+      install:
         remediationAction: enforce
-        templateNames:
-          - name: cm
-        enableTemplateParameters: true
-        templateParameters:
-          name: consume-cm
-          value1: consume
-
-      # rawTemplate: one ConfigurationPolicy whose object count comes from a values map
-      - name: machinesets
-        enabled: true
-        policyRef: install
-        remediationAction: enforce
-        rawTemplate: true
-        templateNames:
-          - name: machineset-raw
-        enableTemplateParameters: true
-        templateParameters:
-          role: infra
-          zones:
-            us-east-2a:
-              replicas: 3
-            us-east-2b:
-              replicas: 2
-
-      - name: toggled-on
-        enabled: true
-        policyRef: opt-in
-        templateNames:
-          - name: cm
-        enableTemplateParameters: true
-        templateParameters:
-          name: opt-in-cm
-
-      - name: toggled-off
-        enabled: true
-        policyRef: opt-out
-        templateNames:
-          - name: cm
-        enableTemplateParameters: true
-        templateParameters:
-          name: opt-out-cm
+        templates:
+          machinesets:
+            file: _cases/raw-list
+            config:
+              role: infra
+              zones:
+                us-east-2a:
+                  replicas: 3
+                us-east-2b:
+                  replicas: 2

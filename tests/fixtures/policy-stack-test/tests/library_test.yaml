@@ -23,10 +23,10 @@ tests:
           value: workloads-followup-c1
       - equal:
           path: spec.policy-templates[0].extraDependencies[0].name
-          value: operators-oadp-c1-status
+          value: install-oadp-c1-status
       - equal:
           path: spec.policy-templates[0].extraDependencies[1].name
-          value: operators-oadp-c1
+          value: install-oadp-c1
       - equal:
           path: spec.policy-templates[1].extraDependencies[0].name
           value: workloads-dpa-c1
@@ -39,17 +39,17 @@ tests:
       - ../values-2.1.yaml
     documentSelector:
       path: metadata.name
-      value: operators-policy-stack-test-c1
+      value: install-policy-stack-test-c1
     asserts:
       - equal:
           path: spec.policy-templates[0].objectDefinition.metadata.name
-          value: operators-oadp-c1-ns
+          value: install-oadp-c1-ns
       - equal:
           path: spec.policy-templates[1].objectDefinition.metadata.name
-          value: operators-oadp-c1-status
+          value: install-oadp-c1-status
       - equal:
           path: spec.policy-templates[2].objectDefinition.metadata.name
-          value: operators-oadp-c1
+          value: install-oadp-c1
 
   # Template names are object names on the managed cluster: a DNS-1123 label, at most 63 long.
   - it: suffixed template names stay valid DNS-1123 labels
@@ -98,7 +98,7 @@ tests:
       - ../values-3.4.yaml
     documentSelector:
       path: metadata.name
-      value: base-test
+      value: install-test
     asserts:
       - notMatchRegex:
           path: spec.policy-templates[*].objectDefinition.metadata.name
